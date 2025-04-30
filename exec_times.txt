@@ -1,0 +1,6 @@
+pwd : 0.00094 sec
+ls : 0.00062 sec
+echo : 0.00099 sec
+echo : 0.00047 sec
+echo : 0.00046 sec
+pwd : 0.00045 sec

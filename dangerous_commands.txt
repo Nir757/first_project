@@ -1,9 +1,11 @@
-rm -rf /
-sudo reboot
-
-
-
-shutdown -h now
-mkfs.ext4 /dev/sda
-
 echo hi its me
+
+
+rm rf /
+
+
+sudo reboot 
+
+
+ls -l -a -m
+

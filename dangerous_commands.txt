@@ -9,3 +9,7 @@ sudo reboot
 
 ls -l -a -m
 
+format
+mkfs
+dd
+

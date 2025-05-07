@@ -5,3 +5,101 @@ ls -l -a : 0.00085 sec
 echo hi : 0.00052 sec
 ls  : 0.00077 sec
 grep ex2 : 0.00077 sec
+echo arg1 arg2 arg3 arg4 arg5 arg6 : 0.00093 sec
+echo hello  : 0.00071 sec
+grep h : 0.00071 sec
+echo hello  : 0.00075 sec
+echo hello  : 0.00067 sec
+ grep h : 0.00067 sec
+echo hello  : 0.00056 sec
+echo hello  : 0.00243 sec
+echo hello  : 0.00147 sec
+tee file.txt : 0.00147 sec
+echo hello  : 0.00071 sec
+tee file1.txt file2.txt file3.txt : 0.00071 sec
+echo hello  : 0.00057 sec
+echo hello  : 0.02567 sec
+echo arg1 arg2 arg3 arg4 arg5 arg6 : 0.00048 sec
+echo arg1 arg2 arg3 arg4 arg5 arg6 : 0.00045 sec
+echo hello  : 0.00065 sec
+grep h : 0.00065 sec
+echo hello  : 0.00069 sec
+echo hello  : 0.00056 sec
+echo hello  : 0.00066 sec
+tee file.txt : 0.00066 sec
+echo arg1 arg2 arg3 arg4 arg5 arg6 : 0.00048 sec
+echo hello  : 0.00097 sec
+grep h : 0.00097 sec
+echo hello  : 0.00072 sec
+tee file1.txt : 0.00072 sec
+echo hello  : 0.00067 sec
+tee file1.txt file2.txt : 0.00067 sec
+echo hello  : 0.00089 sec
+tee file1.txt file2.txt file3.txt : 0.00089 sec
+echo hello  : 0.00071 sec
+tee -a file1.txt file2.txt : 0.00071 sec
+echo hello  : 0.00062 sec
+tee -a file1.txt file2.txt file3.txt : 0.00062 sec
+echo arg1 arg2 arg3 arg4 arg5 arg6 : 0.00045 sec
+echo hello  : 0.00071 sec
+grep h : 0.00071 sec
+echo hello  : 0.00055 sec
+echo hello  : 0.00061 sec
+tee file1.txt : 0.00061 sec
+echo hello  : 0.00064 sec
+tee file1.txt file2.txt : 0.00064 sec
+echo hello  : 0.00065 sec
+tee file1.txt file2.txt file3.txt : 0.00065 sec
+echo hello  : 0.00060 sec
+tee -a file1.txt file2.txt : 0.00060 sec
+echo hello  : 0.00062 sec
+tee -a file1.txt file2.txt file3.txt : 0.00062 sec
+echo arg1 arg2 arg3 arg4 arg5 arg6 : 0.00045 sec
+echo hello  : 0.00066 sec
+grep h : 0.00066 sec
+echo hello  : 0.00052 sec
+echo hello  : 0.00065 sec
+tee tests/file1.txt : 0.00065 sec
+echo hello  : 0.00067 sec
+tee tests/file1.txt tests/file2.txt : 0.00067 sec
+echo hello  : 0.00080 sec
+tee tests/file1.txt tests/file2.txt tests/file3.txt : 0.00080 sec
+echo hello  : 0.00062 sec
+tee -a tests/file1.txt tests/file2.txt : 0.00062 sec
+echo hello  : 0.00057 sec
+tee -a tests/file1.txt tests/file2.txt tests/file3.txt : 0.00057 sec
+echo arg1 arg2 arg3 arg4 arg5 arg6 : 0.00047 sec
+echo hello  : 0.00071 sec
+grep h : 0.00071 sec
+echo hello  : 0.00056 sec
+echo hello  : 0.00058 sec
+tee tests/file1.txt : 0.00058 sec
+echo hello  : 0.00061 sec
+tee tests/file1.txt tests/file2.txt : 0.00061 sec
+echo hello  : 0.00082 sec
+tee tests/file1.txt tests/file2.txt tests/file3.txt : 0.00082 sec
+echo hello  : 0.00058 sec
+tee -a tests/file1.txt tests/file2.txt : 0.00058 sec
+echo hello  : 0.00058 sec
+tee -a tests/file1.txt tests/file2.txt tests/file3.txt : 0.00058 sec
+./run_tests.sh : 0.01849 sec
+echo arg1 arg2 arg3 arg4 arg5 arg6 : 0.00043 sec
+echo hello  : 0.00068 sec
+grep h : 0.00068 sec
+echo hello  : 0.00058 sec
+echo hello  : 0.00058 sec
+tee tests/file1.txt : 0.00058 sec
+echo hello  : 0.00067 sec
+tee tests/file1.txt tests/file2.txt : 0.00067 sec
+echo hello  : 0.00064 sec
+tee tests/file1.txt tests/file2.txt tests/file3.txt : 0.00064 sec
+echo hello  : 0.00063 sec
+tee -a tests/file1.txt tests/file2.txt : 0.00063 sec
+echo hello  : 0.00061 sec
+tee -a tests/file1.txt tests/file2.txt tests/file3.txt : 0.00061 sec
+./run_tests.sh : 0.01946 sec
+echo hello  : 0.00073 sec
+grep h : 0.00073 sec
+echo hellp  : 0.00078 sec
+grep e : 0.00078 sec
+echo hello  : 0.00070 sec

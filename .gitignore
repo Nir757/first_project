@@ -1,3 +1,45 @@
-# gitignore build directory
+# Build directories
 build/
+bin/
+lib/
+
+# Object files
+*.o
+*.obj
+
+# Executables
+*.exe
+*.out
+*.app
+ex1
+ex2
+debug
+main
+shell
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# IDE specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Backup files
+*_backup.c
+*_original.c
+*_before.c
+
+# Test output files
+*.txt
+!CMakeLists.txt
+!README.md
 

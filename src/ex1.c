@@ -1,0 +1,586 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/time.h>
+#include <sys/wait.h>
+
+#define MAX_SIZE 1025
+#define MAX_ARG 7 // command + 6 arguments
+#define MAX_DANG 1000
+
+int space_error(char str[]);
+void split_string(char* input, char* result[], int* count);
+void input_arg_check(int argc);
+FILE* open_file(char* filename, char* mode);
+int load_dangerous_commands(FILE* dangerous_commands, char* dng_cmds[]);
+int split_and_validate(char* input, char* original_input, char* command[]);
+void free_resources(char* command[], int arg_count, char* dng_cmds[], int dng_count);
+int check_dangerous_command(char* original_input, char* command[], char* dng_cmds[], int dng_count, char* print_err, int* dangerous_cmd_warning, int* dangerous_cmd_blocked, int arg_count);
+double execute_command(char* command[], char* original_input, FILE* exec_times);
+double handle_pipe(char* input, char* original_input, FILE* exec_times, char* dng_cmds[], int dng_count, int pipe_index, int* dangerous_cmd_warning, int* dangerous_cmd_blocked);
+void handle_mytee(char * command[], int right_arg_count);
+
+
+int main(int argc, char* argv[])
+{
+    input_arg_check(argc);
+
+    FILE* dangerous_commands = open_file(argv[1], "r");
+    FILE* exec_times = open_file(argv[2], "a");
+
+    char* dng_cmds[MAX_DANG];
+    int dng_count = load_dangerous_commands(dangerous_commands, dng_cmds);
+
+    fclose(dangerous_commands);
+
+    int cmd = 0;
+    int dangerous_cmd_blocked = 0;
+    int dangerous_cmd_warning = 0;
+
+    double last_cmd_time = 0;
+    double total_time = 0;
+    double avg_time = 0;
+    double min_time = 0;
+    double max_time = 0;
+
+    while (1) // the mini-shell
+    {
+        printf("#cmd:%d|#dangerous_cmd_blocked:%d|last_cmd_time:%.5f|avg_time:%.5f|min_time:%.5f|max_time:%.5f>>"
+                ,cmd,dangerous_cmd_blocked,last_cmd_time,avg_time,min_time,max_time);
+
+        char input[MAX_SIZE]; //input str
+        char original_input[MAX_SIZE]; //to have the original after using splitting
+        char* command[MAX_ARG + 1]; //array for arguments + NULL
+
+        if (fgets(input, MAX_SIZE, stdin) == NULL) //getting input
+        {
+            perror("fgets");
+            exit(1);
+        }
+
+        input[strcspn(input, "\n")] = 0; //remove newline character after using fgets and avoiding execvp error
+        strcpy(original_input, input);
+
+        int flag_pipe = 0; //not a fucntion because we only want to check for one pipe
+        int pipe_index;
+        for (pipe_index = 0; pipe_index < strlen(input); pipe_index++)
+        {
+            if (input[pipe_index] == '|')
+                {
+
+                    if(input[pipe_index - 1] == ' ' && input[pipe_index + 1] == ' ') // Only set flag_pipe if there are spaces on both sides
+                    {
+                        flag_pipe = 1;
+                        break;
+                    }
+                }
+        }
+
+        if (flag_pipe == 1)
+        {
+            double runtime = handle_pipe(input, original_input, exec_times, dng_cmds, dng_count, pipe_index, &dangerous_cmd_warning, &dangerous_cmd_blocked);
+
+            if (runtime >= 0) // Both commands succeeded
+            {
+                cmd += 2;  // Both commands were valid and ran
+                total_time += runtime;
+                last_cmd_time = runtime / 2;  // Average time per command
+                avg_time = total_time / cmd;
+
+                double per_cmd_time = runtime / 2;  // Split runtime between the two commands
+                if (per_cmd_time > max_time)
+                    max_time = per_cmd_time;
+
+                if (per_cmd_time < min_time || min_time == 0)
+                {
+                    min_time = per_cmd_time;
+                }
+            }
+            else
+            {
+                printf("ERR_PIPE\n");
+            }
+
+            continue; // Skip the regular command processing
+        }
+
+        int arg_count = split_and_validate(input, original_input, command);
+        if (arg_count == -1) // Error in parsing input
+        {
+            for (int i = 0; i < MAX_ARG + 1; i++) {
+                command[i] = NULL;
+            }
+            continue;
+        }
+
+        if (arg_count == 0) // skip empty input lines
+            continue;
+
+        if (strcmp(command[0], "done") == 0) //checking for done - end of terminal
+        {
+            printf("%d\n", dangerous_cmd_blocked);
+
+            // Only free the current command arguments which we know are valid - free resources caused double free error
+            for (int i = 0; i < arg_count; i++) {
+                if (command[i] != NULL) {
+                    free(command[i]);
+                }
+            }
+
+            fclose(exec_times);
+            exit(0);
+        }
+
+        char print_err[MAX_SIZE];
+        int danger_status = check_dangerous_command(original_input, command, dng_cmds, dng_count, print_err, &dangerous_cmd_warning, &dangerous_cmd_blocked, arg_count);
+
+        if (danger_status == 1) // Dangerous command detected
+        {
+            for (int i = 0; i < arg_count; i++)
+            {
+                free(command[i]);
+            }
+            continue;
+        }
+
+        double runtime = execute_command(command, original_input, exec_times);
+
+        if (runtime >= 0) // Command executed successfully
+        {
+            cmd++;
+            total_time += runtime;
+            last_cmd_time = runtime;
+            avg_time = total_time / cmd;
+
+            if (runtime > max_time)
+                max_time = runtime;
+
+            if (runtime < min_time || min_time == 0)
+            {
+                min_time = runtime;
+            }
+        }
+
+        for (int i = 0; i < arg_count; i++) {
+            free(command[i]);
+        }
+    }
+
+    return 0;
+}
+
+void input_arg_check(int argc)
+{
+    if(argc < 3)
+    {
+        fprintf(stderr, "Error: please include two files\n");
+        exit(1);
+    }
+}
+
+FILE* open_file(char* filename, char* mode)
+{
+    FILE* file = fopen(filename, mode);
+    if(file == NULL)
+    {
+        fprintf(stderr, "ERR\n");
+        exit(1);
+    }
+    return file;
+}
+
+int load_dangerous_commands(FILE* dangerous_commands, char* dng_cmds[])
+{
+    char line[MAX_SIZE];
+    int dng_count = 0;
+
+    while(fgets(line, MAX_SIZE, dangerous_commands))
+    {
+        line[strcspn(line, "\n")] = '\0'; // remove newline character
+
+        int len = strlen(line);
+        while (len > 0 && (line[len - 1] == ' ' || line[len - 1] == '\r')) //this loop is to remove ' ' and \r which caused strcmp to not work (took me hours to understand)
+            {
+                line[len - 1] = '\0';
+                len--;
+            }
+
+        if (len == 0)
+            continue;
+
+        dng_cmds[dng_count] = malloc(len + 1);
+        if (dng_cmds[dng_count] == NULL)
+        {
+            perror("malloc");
+            exit(1);
+        }
+
+        strcpy(dng_cmds[dng_count], line); // store in array
+
+        dng_count++;
+        if (dng_count >= MAX_DANG)
+            break;
+    }
+
+    return dng_count;
+}
+
+int split_and_validate(char* input, char* original_input, char* command[])
+{
+    int arg_count = 0;
+    int error = 0;  // Track if we have any errors
+
+    int space_err = space_error(input);
+    if (space_err == 1) //check for one or more spaces
+    {
+        printf("ERR_SPACE\n");
+        error = 1;
+    }
+
+    split_string(input, command, &arg_count);
+
+    // Check if split_string encountered too many arguments
+    if (arg_count == -1 || arg_count > MAX_ARG) 
+    {
+        printf("ERR_ARGS\n");
+        error = 1;
+    }
+
+    if (error) {
+        // Clean up any allocated memory
+        for (int i = 0; command[i] != NULL; i++) {
+            free(command[i]);
+            command[i] = NULL;
+        }
+        return -1;
+    }
+
+    return arg_count;
+}
+
+void free_resources(char* command[], int arg_count, char* dng_cmds[], int dng_count)
+{
+    for (int i = 0; i < arg_count; i++)
+    {
+        free(command[i]);
+    }
+    for (int i = 0; i < dng_count; i++)
+    {
+        free(dng_cmds[i]);
+    }
+}
+
+int check_dangerous_command(char* original_input, char* command[], char* dng_cmds[], int dng_count, char* print_err, int* dangerous_cmd_warning, int* dangerous_cmd_blocked, int arg_count)
+{
+    int warning = 0;
+    int dang_err = 0;
+
+    for (int i = 0; i < dng_count; i++)
+    {
+        if (strcmp(dng_cmds[i], original_input) == 0) // exact match
+        {
+            dang_err = 1;
+            strcpy(print_err, dng_cmds[i]);
+            break;
+        }
+
+        char original_dang_copy[MAX_SIZE];  // warning on command name match
+        strcpy(original_dang_copy, dng_cmds[i]);
+        char* dang_cmd = strtok(original_dang_copy, " "); // we only need the first word so no need to split the whole string
+        if (dang_cmd != NULL && strcmp(dang_cmd, command[0]) == 0)
+        {
+            warning = 1;
+            strcpy(print_err, dng_cmds[i]);
+        }
+    }
+
+    if (dang_err)
+    {
+        printf("ERR: Dangerous command detected (\"%s\"). Execution prevented.\n", print_err);
+        (*dangerous_cmd_blocked)++;
+        return 1;  // Dangerous command
+    }
+    if (warning)
+    {
+        printf("WARNING: Command similar to dangerous command (\"%s\"). Proceed with caution.\n", print_err);
+        (*dangerous_cmd_warning)++; // Increment the warning counter
+        return 2;  // Warning
+    }
+
+    return 0;  // No danger
+}
+
+double execute_command(char* command[], char* original_input, FILE* exec_times)
+{
+    pid_t pid;
+    pid = fork();
+    if (pid < 0)
+    {
+        perror("fork");
+        exit(1);
+    }
+    else if (pid == 0)
+    {
+        execvp(command[0], command);
+        perror("execvp");
+        exit(1);
+    }
+    else
+    {
+        struct timeval start, end; //gettimeofday return a special variable type
+        gettimeofday(&start, NULL);
+
+        int status;
+        wait(&status);
+
+        gettimeofday(&end, NULL);
+
+        double runtime = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1000000.0;
+
+        if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+        {
+            fprintf(exec_times, "%s : %.5f sec\n", original_input, runtime);
+            fflush(exec_times);
+            return runtime;
+        }
+
+        return -1;  // Command failed
+    }
+}
+
+int space_error(char str[])
+{
+    for (int i = 0; str[i] != '\0'; i++)
+    {
+        if (str[i] == ' ' && str[i + 1] == ' ')
+            return 1;
+    }
+    return 0;
+}
+
+void split_string(char* input, char* result[], int* count) {
+    *count = 0;
+    int word_start = 0;
+    int input_length = strlen(input);
+    
+    // Initialize all pointers to NULL
+    for (int i = 0; i <= MAX_ARG; i++) {
+        result[i] = NULL;
+    }
+    
+    for(int i = 0; i <= input_length && *count < MAX_ARG; i++) {
+        if(input[i] == ' ' || input[i] == '\0') {
+            if(i > word_start) {
+                int word_length = i - word_start;
+                result[*count] = malloc(word_length + 1);
+                if (result[*count] == NULL) {
+                    perror("malloc");
+                    // Clean up already allocated memory
+                    for (int j = 0; j < *count; j++) {
+                        free(result[j]);
+                        result[j] = NULL;
+                    }
+                    exit(1);
+                }
+                strncpy(result[*count], input + word_start, word_length);
+                result[*count][word_length] = '\0';
+                (*count)++;
+            }
+            word_start = i + 1;
+        }
+    }
+    
+    // Check if we exceeded MAX_ARG
+    if (*count >= MAX_ARG && word_start < input_length) {
+        // Clean up if we hit the limit
+        for (int i = 0; i < *count; i++) {
+            free(result[i]);
+            result[i] = NULL;
+        }
+        *count = -1;  // Signal error
+        return;
+    }
+    
+    result[*count] = NULL; // NULL terminate for execvp
+}
+
+double handle_pipe(char* input, char* original_input, FILE* exec_times, char* dng_cmds[], int dng_count, int pipe_index, int* dangerous_cmd_warning, int* dangerous_cmd_blocked)
+{
+    char input_left[MAX_SIZE];
+    char input_right[MAX_SIZE];
+    struct timeval start, end;
+    double runtime = 0;
+
+    strncpy(input_left, input, pipe_index);//splitting to left
+    input_left[pipe_index] = '\0';
+
+    int right_start = pipe_index + 2; // +2 to skip the the first space
+    strcpy(input_right, &input[right_start]); //splitting to right
+
+    char* left_command[MAX_ARG + 1];
+    char* right_command[MAX_ARG + 1];
+
+    int left_arg_count = split_and_validate(input_left, original_input, left_command);
+    int right_arg_count = split_and_validate(input_right, original_input, right_command);
+
+    if (left_arg_count == -1 || right_arg_count == -1)
+    {
+        return -1;
+    }
+
+    if (left_arg_count == 0 || right_arg_count == 0)
+    {
+        return -1;
+    }
+
+    // Check if either command is dangerous
+    char print_err[MAX_SIZE];
+    int danger_status_left = check_dangerous_command(input_left, left_command, dng_cmds, dng_count, print_err, dangerous_cmd_warning, dangerous_cmd_blocked, left_arg_count);
+
+    if (danger_status_left == 1) // Dangerous left command detected
+    {
+        free_resources(left_command, left_arg_count, NULL, 0);
+        free_resources(right_command, right_arg_count, NULL, 0);
+        return -1;
+    }
+
+    int danger_status_right = check_dangerous_command(input_right, right_command, dng_cmds, dng_count, print_err, dangerous_cmd_warning, dangerous_cmd_blocked, right_arg_count);
+
+    if (danger_status_right == 1) // Dangerous right command detected
+    {
+        free_resources(left_command, left_arg_count, NULL, 0);
+        free_resources(right_command, right_arg_count, NULL, 0);
+        return -1;
+    }
+
+    int pipe_fd[2];
+    if (pipe(pipe_fd) == -1)
+    {
+        perror("pipe");
+        exit(1);
+    }
+
+    // Start timing for the entire pipe operation
+    gettimeofday(&start, NULL);
+
+    pid_t pid_left = fork();
+    if (pid_left < 0)
+    {
+        perror("fork");
+        exit(1);
+    }
+    else if (pid_left == 0)
+    {
+        close(pipe_fd[0]); //closing the read end of the pipe
+        dup2(pipe_fd[1], STDOUT_FILENO); //redirecting stdout to the write end of the pipe
+        close(pipe_fd[1]); //closing the write end of the pipe now that he was redirected
+
+        execvp(left_command[0], left_command);
+        perror("execvp");//if we reached here there was an error
+        exit(1);
+    }
+    else
+    {
+        pid_t pid_right = fork();
+        if (pid_right < 0)
+        {
+            perror("fork");
+            exit(1);
+        }
+        else if (pid_right == 0)
+        {
+            close(pipe_fd[1]); //closing the write end of the pipe
+            dup2(pipe_fd[0], STDIN_FILENO); //redirecting stdin to the read end of the pipe
+            close(pipe_fd[0]); //closing the read end of the pipe now that he was redirected
+
+            if (strcmp(right_command[0], "my_tee") == 0)
+            {
+                if (right_arg_count < 2)
+                {
+                    fprintf(stderr, "ERR: my_tee requires at least one output file\n");
+                    exit(1);
+                }
+                handle_mytee(right_command, right_arg_count);
+                exit(0);
+            }
+
+            execvp(right_command[0], right_command);
+            perror("execvp");
+            exit(1);
+        }
+        else
+        {
+            close(pipe_fd[0]);//the parent process also needs to close the read end of the pipe
+            close(pipe_fd[1]);
+
+            //waiting for the child processes to finish
+            int status1, status2;
+            waitpid(pid_left, &status1, 0);
+            waitpid(pid_right, &status2, 0);
+
+            gettimeofday(&end, NULL);
+            runtime = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1000000.0;
+
+            // Write both commands to exec_times with the same runtime
+            if (WIFEXITED(status1) && WEXITSTATUS(status1) == 0)
+            {
+                fprintf(exec_times, "%s : %.5f sec\n", input_left, runtime);
+                fflush(exec_times);
+            }
+
+            if (WIFEXITED(status2) && WEXITSTATUS(status2) == 0)
+            {
+                fprintf(exec_times, "%s : %.5f sec\n", input_right, runtime);
+                fflush(exec_times);
+            }
+
+            free_resources(left_command, left_arg_count, NULL, 0);
+            free_resources(right_command, right_arg_count, NULL, 0);
+
+            // Return the runtime if both commands succeeded
+            if (WIFEXITED(status1) && WEXITSTATUS(status1) == 0 &&
+                WIFEXITED(status2) && WEXITSTATUS(status2) == 0)
+            {
+                return runtime;
+            }
+            return -1;  // Command failed
+        }
+    }
+    return -1;
+}
+
+
+void handle_mytee(char * command[], int right_arg_count)
+{
+    int append_mode = 0;
+    int start_index = 1;
+
+    // Check for the -a option
+    if (strcmp(command[1], "-a") == 0) 
+    {
+        append_mode = 1;
+        start_index = 2;
+    }
+
+    // Buffer to read from stdin
+    char buffer[MAX_SIZE];
+
+    // Read from stdin
+    while (fgets(buffer, sizeof(buffer), stdin) != NULL)
+    {
+        // Write to stdout
+        printf("%s", buffer);
+
+        // Write to each file
+        for (int i = start_index; i < right_arg_count; i++) {
+            FILE *file = open_file(command[i], append_mode ? "a" : "w");
+            if (file) {
+                fputs(buffer, file);
+                fclose(file);
+            } else {
+                fprintf(stderr, "Error opening file: %s\n", command[i]);
+            }
+        }
+    }
+}

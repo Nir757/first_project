@@ -778,15 +778,15 @@ int handle_rlimit(char* command[], int arg_count, FILE* exec_times, int* cmd, do
                 else if (strcmp(resource_name, "mem") == 0)
                     resource_code = RLIMIT_AS;
                 
-                else if (strcmp(resource_name, "size") == 0)
+                else if (strcmp(resource_name, "fsize") == 0)
                     resource_code = RLIMIT_RSS;
                 
                 else if (strcmp(resource_name, "files") == 0)
                     resource_code = RLIMIT_NOFILE;
-                    
+
                 else
                 {
-                    perror("not a valid resource");
+                    fprintf(stderr, "ERR: Not a valid resource\n");
                     return 0;
                 }
 

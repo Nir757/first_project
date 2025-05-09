@@ -19,7 +19,7 @@
 #define BYTES_IN_GB (1024 * 1024 * 1024)
 
 int space_error(char str[]);
-void split_string(char* input, char* result[], int* count);
+void split_string(char* input, char* result[], int* count, int rlimit_flag);
 void input_arg_check(int argc);
 FILE* open_file(char* filename, char* mode);
 int load_dangerous_commands(FILE* dangerous_commands, char* dng_cmds[]);
@@ -76,6 +76,7 @@ int main(int argc, char* argv[])
         char input[MAX_SIZE]; //input str
         char original_input[MAX_SIZE]; //to have the original after using splitting
         char* command[MAX_ARG + 1]; //array for arguments + NULL
+        char* rlimit_command[MAX_ARG + 5]; //array for rlimit commands + NULL
 
         if (fgets(input, MAX_SIZE, stdin) == NULL) //getting input
         {
@@ -86,26 +87,9 @@ int main(int argc, char* argv[])
         input[strcspn(input, "\n")] = 0; //remove newline character after using fgets and avoiding execvp error
         strcpy(original_input, input);
 
-        int rlimit_flag = 0;
+        int rlimit_set_flag = 0;
         if (strncmp(input, "rlimit set", 10) == 0)
-            rlimit_flag = 1;
-
-        // if (strncmp(input, "rlimit", 6) == 0)
-        // {
-        //     char* new_command[MAX_ARG + 5]; // 4 max limits + NULL
-
-        //     int success = handle_rlimit(command, arg_count, exec_times, &cmd, &total_time, &last_cmd_time, &avg_time, &min_time, &max_time);
-
-        //     if (success == 0)
-        //     {
-        //        for (int i = 0; i < arg_count; i++)
-        //        {
-        //         if (command[i] != NULL) 
-        //             free(command[i]);
-        //        }
-        //     }
-        //     continue;
-        // }
+            rlimit_set_flag = 1;
 
         int flag_pipe = 0; //not a fucntion because we only want to check for one pipe
         int pipe_index;
@@ -149,8 +133,18 @@ int main(int argc, char* argv[])
 
             continue; // Skip the regular command processing
         }
+        
+        //sending input to validation and splitting
+        int arg_count;
+        if (rlimit_set_flag == 1)
+        {
+            arg_count = split_and_validate(input, original_input, rlimit_command, rlimit_set_flag);
+        }
+        else
+        {
+            arg_count = split_and_validate(input, original_input, command,0);
+        }
 
-        int arg_count = split_and_validate(input, original_input, command, rlimit_flag);
         if (arg_count == -1) // Error in parsing input
         {
             for (int i = 0; i < MAX_ARG + 1; i++) {
@@ -162,17 +156,32 @@ int main(int argc, char* argv[])
         if (arg_count == 0) // skip empty input lines
             continue;
 
-        // Handle rlimit command -                  remove laterrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
-        if (rlimit_flag == 1)
+        // Handle rlimit command                   
+        if (strncmp(input, "rlimit", 6) == 0)
         {
-            if (handle_rlimit(command, arg_count, exec_times, &cmd, &total_time, &last_cmd_time, &avg_time, &min_time, &max_time))
+            if (rlimit_set_flag)
             {
-                for (int i = 0; i < arg_count; i++)
+                if (handle_rlimit(rlimit_command, arg_count, exec_times, &cmd, &total_time, &last_cmd_time, &avg_time, &min_time, &max_time))
                 {
-                    if (command[i] != NULL)
-                        free(command[i]);
+                    for (int i = 0; i < arg_count; i++)
+                    {
+                        if (rlimit_command[i] != NULL)
+                            free(rlimit_command[i]);
+                    }
+                    continue;
                 }
-                continue;
+            }
+            else
+            {
+                if (handle_rlimit(command, arg_count, exec_times, &cmd, &total_time, &last_cmd_time, &avg_time, &min_time, &max_time))
+                {
+                    for (int i = 0; i < arg_count; i++)
+                    {
+                        if (command[i] != NULL)
+                            free(command[i]);
+                    }
+                    continue;
+                }
             }
         }
 
@@ -295,19 +304,12 @@ int load_dangerous_commands(FILE* dangerous_commands, char* dng_cmds[])
 
 int split_and_validate(char* input, char* original_input, char* command[], int rlimit_flag)
 {
-    if (rlimit_flag == 1)
-    {
-        //change command to a new array in size of MAX_ARG + 5 -> 4 max limits + NULL
-        char* new_command[MAX_ARG + 5];
-        for (int i = 0; i < MAX_ARG + 5; i++)
-        {
-            new_command[i] = command[i];
-        }
-        command = new_command;
-    }
-
     int arg_count = 0;
     int error = 0;  // Track if we have any errors
+    int max_arg = MAX_ARG;
+
+    if (rlimit_flag == 1)
+        max_arg = MAX_ARG + 4; 
 
     int space_err = space_error(input);
     if (space_err == 1) //check for one or more spaces
@@ -316,10 +318,10 @@ int split_and_validate(char* input, char* original_input, char* command[], int r
         error = 1;
     }
 
-    split_string(input, command, &arg_count);
+    split_string(input, command, &arg_count, rlimit_flag);
 
     // Check if split_string encountered too many arguments
-    if (arg_count == -1 || arg_count > MAX_ARG) 
+    if (arg_count == -1 || arg_count > max_arg) 
     {
         printf("ERR_ARGS\n");
         error = 1;
@@ -437,17 +439,18 @@ int space_error(char str[])
     return 0;
 }
 
-void split_string(char* input, char* result[], int* count) {
+void split_string(char* input, char* result[], int* count, int rlimit_flag) {
     *count = 0;
     int word_start = 0;
     int input_length = strlen(input);
+    int max_arg = rlimit_flag ? MAX_ARG + 4 : MAX_ARG;
     
     // Initialize all pointers to NULL
-    for (int i = 0; i <= MAX_ARG; i++) {
+    for (int i = 0; i <= max_arg; i++) {
         result[i] = NULL;
     }
     
-    for(int i = 0; i <= input_length && *count < MAX_ARG; i++) {
+    for(int i = 0; i <= input_length && *count < max_arg; i++) {
         if(input[i] == ' ' || input[i] == '\0') {
             if(i > word_start) {
                 int word_length = i - word_start;

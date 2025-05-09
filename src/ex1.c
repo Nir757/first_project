@@ -159,29 +159,25 @@ int main(int argc, char* argv[])
         // Handle rlimit command                   
         if (strncmp(input, "rlimit", 6) == 0)
         {
-            if (rlimit_set_flag)
+            char** cmd_array = rlimit_set_flag ? rlimit_command : command;
+            if (handle_rlimit(cmd_array, arg_count, exec_times, &cmd, &total_time, &last_cmd_time, &avg_time, &min_time, &max_time))
             {
-                if (handle_rlimit(rlimit_command, arg_count, exec_times, &cmd, &total_time, &last_cmd_time, &avg_time, &min_time, &max_time))
+                for (int i = 0; i < arg_count; i++)
                 {
-                    for (int i = 0; i < arg_count; i++)
-                    {
-                        if (rlimit_command[i] != NULL)
-                            free(rlimit_command[i]);
-                    }
-                    continue;
+                    if (cmd_array[i] != NULL)
+                        free(cmd_array[i]);
                 }
+                continue;
             }
-            else
+            else // handle_rlimit returned 0 (error)
             {
-                if (handle_rlimit(command, arg_count, exec_times, &cmd, &total_time, &last_cmd_time, &avg_time, &min_time, &max_time))
+                // Free command args as they were parsed for this attempt
+                for (int i = 0; i < arg_count; i++)
                 {
-                    for (int i = 0; i < arg_count; i++)
-                    {
-                        if (command[i] != NULL)
-                            free(command[i]);
-                    }
-                    continue;
+                    if (cmd_array[i] != NULL)
+                        free(cmd_array[i]);
                 }
+                continue; // Continue to next prompt
             }
         }
 
@@ -731,6 +727,15 @@ int handle_rlimit(char* command[], int arg_count, FILE* exec_times, int* cmd, do
 
     if (strcmp(command[1], "show") == 0)
     {
+        // Check for exact argument count - should be exactly 2 ("rlimit" and "show")
+        if (arg_count != 2) 
+        {
+            return 0;
+        }
+
+        struct timeval start, end;
+        gettimeofday(&start, NULL);
+
         struct rlimit cpu_rl, mem_rl,fsize_rl,files_rl;
         
         // Get CPU limits
@@ -767,6 +772,25 @@ int handle_rlimit(char* command[], int arg_count, FILE* exec_times, int* cmd, do
         else
             printf("Open files: soft=%lu, hard=%lu\n", (unsigned long)files_rl.rlim_cur, (unsigned long)files_rl.rlim_max);
 
+        gettimeofday(&end, NULL);
+        double runtime = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1000000.0;
+
+        // Update timing statistics
+        (*cmd)++;
+        *last_cmd_time = runtime;
+        *total_time += runtime;
+        *avg_time = *total_time / *cmd;
+
+        if (runtime > *max_time)
+            *max_time = runtime;
+
+        if (runtime < *min_time || *min_time == 0)
+            *min_time = runtime;
+
+        // Write to exec_times file
+        fprintf(exec_times, "%s : %.5f sec\n", command[0], runtime);
+        fflush(exec_times);
+
         return 1;
     }
     
@@ -778,75 +802,120 @@ int handle_rlimit(char* command[], int arg_count, FILE* exec_times, int* cmd, do
             return 0;
         }
 
-        for (int i = 2; i < arg_count; i++)
-        {
-            char resource_name[MAX_SIZE];
-            char value_str[MAX_SIZE];
-            int hard_limit;
-            int soft_limit;
+        // Find where the actual command starts after the resource limits
+        int cmd_start = 2;
+        for (; cmd_start < arg_count; cmd_start++) {
+            if (strchr(command[cmd_start], '=') == NULL) {
+                break;
+            }
+        }
 
-            int new_index = 2; //rlimit + set arg
+        // If no command after limits, return error
+        if (cmd_start >= arg_count) {
+            printf("ERR\n");  // No command provided after limits
+            return 0;
+        }
 
-            if (strchr(command[i], '=') != NULL)
+        // If we have a command, fork and run it with the new limits
+        pid_t pid = fork();
+        if (pid < 0) {
+            perror("fork");
+            return 0;
+        }
+        else if (pid == 0) {
+            // Child process - set limits here
+            for (int i = 2; i < cmd_start; i++)
             {
-                new_index++; //to have the correct index for the new command
+                char resource_name[MAX_SIZE];
+                char value_str[MAX_SIZE];
+                int hard_limit;
+                int soft_limit;
 
-                //extracting resource name and value
-                strncpy(resource_name, command[i], strchr(command[i], '=') - command[i]);
-                resource_name[strchr(command[i], '=') - command[i]] = '\0';
-                strcpy(value_str, strchr(command[i], '=') + 1);
-
-                //checking if there are hard and soft limits
-                if (strchr(value_str, ':') != NULL)
+                if (strchr(command[i], '=') != NULL)
                 {
-                    //extracting hard and soft limits
-                    char temp[MAX_SIZE];
-                    strncpy(temp, value_str, strchr(value_str, ':') - value_str);
-                    temp[strchr(value_str, ':') - value_str] = '\0';
-                    soft_limit = size_value(temp);
-                    hard_limit = size_value(strchr(value_str, ':') + 1);
-                }
-                else
-                {
-                    soft_limit = size_value(value_str);
-                    hard_limit = size_value(value_str);
-                }
+                    // Your existing limit setting code...
+                    strncpy(resource_name, command[i], strchr(command[i], '=') - command[i]);
+                    resource_name[strchr(command[i], '=') - command[i]] = '\0';
+                    strcpy(value_str, strchr(command[i], '=') + 1);
 
-                //checking the resource name and setting the correct limit
-                if (strcmp(resource_name, "cpu") == 0)
-                    resource_code = RLIMIT_CPU;
-                
-                else if (strcmp(resource_name, "mem") == 0)
-                    resource_code = RLIMIT_AS;
-                
-                else if (strcmp(resource_name, "fsize") == 0)
-                    resource_code = RLIMIT_FSIZE;
-                
-                else if (strcmp(resource_name, "nofile") == 0)
-                    resource_code = RLIMIT_NOFILE;
+                    if (strchr(value_str, ':') != NULL)
+                    {
+                        char temp[MAX_SIZE];
+                        strncpy(temp, value_str, strchr(value_str, ':') - value_str);
+                        temp[strchr(value_str, ':') - value_str] = '\0';
+                        soft_limit = size_value(temp);
+                        hard_limit = size_value(strchr(value_str, ':') + 1);
+                    }
+                    else
+                    {
+                        soft_limit = size_value(value_str);
+                        hard_limit = size_value(value_str);
+                    }
 
-                else
-                {
-                    fprintf(stderr, "ERR: Not a valid resource\n");
-                    return 0;
-                }
+                    if (strcmp(resource_name, "cpu") == 0)
+                        resource_code = RLIMIT_CPU;
+                    else if (strcmp(resource_name, "mem") == 0)
+                        resource_code = RLIMIT_AS;
+                    else if (strcmp(resource_name, "fsize") == 0)
+                        resource_code = RLIMIT_FSIZE;
+                    else if (strcmp(resource_name, "nofile") == 0)
+                        resource_code = RLIMIT_NOFILE;
+                    else
+                    {
+                        fprintf(stderr, "ERR: Not a valid resource\n");
+                        exit(1);
+                    }
 
-                if(set_rlimit(resource_code, soft_limit, hard_limit) == -1) 
-                {
-                    perror("setrlimit");
-                    return 0;
+                    if(set_rlimit(resource_code, soft_limit, hard_limit) == -1) 
+                    {
+                        perror("setrlimit");
+                        exit(1);
+                    }
                 }
-                
             }
 
+            // Create new array for the command
+            char* new_command[MAX_ARG + 1];
+            int new_index = 0;
             
+            // Copy the command and its arguments
+            for (int i = cmd_start; i < arg_count; i++) {
+                new_command[new_index++] = command[i];
+            }
+            new_command[new_index] = NULL;
 
-           
-
-
-
-
+            execvp(new_command[0], new_command);
+            perror("execvp");
+            exit(1);
         }
+        else {
+            // Parent process
+            int status;
+            struct timeval start, end;
+            gettimeofday(&start, NULL);
+            wait(&status);
+            gettimeofday(&end, NULL);
+            double runtime = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1000000.0;
+
+            if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+                // Update timing statistics
+                (*cmd)++;
+                *last_cmd_time = runtime;
+                *total_time += runtime;
+                *avg_time = *total_time / *cmd;
+
+                if (runtime > *max_time)
+                    *max_time = runtime;
+
+                if (runtime < *min_time || *min_time == 0)
+                    *min_time = runtime;
+
+                // Write to exec_times file
+                fprintf(exec_times, "%s : %.5f sec\n", command[cmd_start], runtime);
+                fflush(exec_times);
+            }
+        }
+
         return 1;
     }
     return 0;

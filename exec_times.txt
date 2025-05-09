@@ -111,3 +111,4 @@ sleep 10 : 10.00165 sec
 sleep : 2.00000 sec (terminated due to CPU limit)
 echo h h h h h h : 0.00098 sec
 echo hi : 0.00050 sec
+sleep 5 : 5.00098 sec

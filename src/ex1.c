@@ -23,7 +23,7 @@ void split_string(char* input, char* result[], int* count);
 void input_arg_check(int argc);
 FILE* open_file(char* filename, char* mode);
 int load_dangerous_commands(FILE* dangerous_commands, char* dng_cmds[]);
-int split_and_validate(char* input, char* original_input, char* command[]);
+int split_and_validate(char* input, char* original_input, char* command[], int rlimit_flag);
 void free_resources(char* command[], int arg_count, char* dng_cmds[], int dng_count);
 int check_dangerous_command(char* original_input, char* command[], char* dng_cmds[], int dng_count, char* print_err, int* dangerous_cmd_warning, int* dangerous_cmd_blocked, int arg_count);
 double execute_command(char* command[], char* original_input, FILE* exec_times);
@@ -86,6 +86,10 @@ int main(int argc, char* argv[])
         input[strcspn(input, "\n")] = 0; //remove newline character after using fgets and avoiding execvp error
         strcpy(original_input, input);
 
+        int rlimit_flag = 0;
+        if (strncmp(input, "rlimit set", 10) == 0)
+            rlimit_flag = 1;
+
         // if (strncmp(input, "rlimit", 6) == 0)
         // {
         //     char* new_command[MAX_ARG + 5]; // 4 max limits + NULL
@@ -146,7 +150,7 @@ int main(int argc, char* argv[])
             continue; // Skip the regular command processing
         }
 
-        int arg_count = split_and_validate(input, original_input, command);
+        int arg_count = split_and_validate(input, original_input, command, rlimit_flag);
         if (arg_count == -1) // Error in parsing input
         {
             for (int i = 0; i < MAX_ARG + 1; i++) {
@@ -159,7 +163,7 @@ int main(int argc, char* argv[])
             continue;
 
         // Handle rlimit command -                  remove laterrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
-        if (strcmp(command[0], "rlimit") == 0)
+        if (rlimit_flag == 1)
         {
             if (handle_rlimit(command, arg_count, exec_times, &cmd, &total_time, &last_cmd_time, &avg_time, &min_time, &max_time))
             {
@@ -289,8 +293,19 @@ int load_dangerous_commands(FILE* dangerous_commands, char* dng_cmds[])
     return dng_count;
 }
 
-int split_and_validate(char* input, char* original_input, char* command[])
+int split_and_validate(char* input, char* original_input, char* command[], int rlimit_flag)
 {
+    if (rlimit_flag == 1)
+    {
+        //change command to a new array in size of MAX_ARG + 5 -> 4 max limits + NULL
+        char* new_command[MAX_ARG + 5];
+        for (int i = 0; i < MAX_ARG + 5; i++)
+        {
+            new_command[i] = command[i];
+        }
+        command = new_command;
+    }
+
     int arg_count = 0;
     int error = 0;  // Track if we have any errors
 
@@ -494,8 +509,8 @@ double handle_pipe(char* input, char* original_input, FILE* exec_times, char* dn
     char* left_command[MAX_ARG + 1];
     char* right_command[MAX_ARG + 1];
 
-    int left_arg_count = split_and_validate(input_left, original_input, left_command);
-    int right_arg_count = split_and_validate(input_right, original_input, right_command);
+    int left_arg_count = split_and_validate(input_left, original_input, left_command, 0);
+    int right_arg_count = split_and_validate(input_right, original_input, right_command, 0);
 
     if (left_arg_count == -1 || right_arg_count == -1)
     {
@@ -821,7 +836,7 @@ int handle_rlimit(char* command[], int arg_count, FILE* exec_times, int* cmd, do
                 
             }
 
-            // char* new_command[MAX_ARG + 1 - 2]; // -2 because we already have the rlimit and set arg
+            //char* new_command[MAX_ARG + 1 - 2]; // -2 because we already have the rlimit and set arg
 
 
 

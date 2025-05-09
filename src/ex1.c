@@ -7,6 +7,7 @@
 #include <sys/resource.h> // for setrlimit and getrlimit
 #include <signal.h> // for signal handling
 #include <ctype.h> // for isdigit function
+#include <errno.h> // for errno - memory and files errors
 
 #define MAX_SIZE 1025
 #define MAX_ARG 7 // command + 6 arguments
@@ -33,6 +34,8 @@ int set_rlimit(int resource_code, int soft_limit, int hard_limit);
 int size_value(const char* value_str);
 void handle_sigcpu(int signo);
 void handle_sigfsz(int signo);
+void handle_sigmem(int signo);
+void handle_signof(int signo);
 
 struct rlimit rl;
 
@@ -60,6 +63,8 @@ int main(int argc, char* argv[])
 
     signal(SIGXCPU  , handle_sigcpu); // cpu
     signal(SIGXFSZ , handle_sigfsz); // files
+    signal(SIGSEGV, handle_sigmem); // memory
+    signal(SIGUSR1, handle_signof); // open files - using SIGUSR1 as a custom signal
     
 
 
@@ -234,6 +239,10 @@ FILE* open_file(char* filename, char* mode)
     FILE* file = fopen(filename, mode);
     if(file == NULL)
     {
+        if (errno == EMFILE) {  // Too many open files
+            raise(SIGUSR1);  // Raise our custom signal
+            return NULL;
+        }
         fprintf(stderr, "ERR\n");
         exit(1);
     }
@@ -262,6 +271,10 @@ int load_dangerous_commands(FILE* dangerous_commands, char* dng_cmds[])
         dng_cmds[dng_count] = malloc(len + 1);
         if (dng_cmds[dng_count] == NULL)
         {
+            if (errno == ENOMEM) {  // Out of memory
+                raise(SIGSEGV);  // Raise memory error signal
+                return dng_count;
+            }
             perror("malloc");
             exit(1);
         }
@@ -425,6 +438,16 @@ void split_string(char* input, char* result[], int* count) {
                 int word_length = i - word_start;
                 result[*count] = malloc(word_length + 1);
                 if (result[*count] == NULL) {
+                    if (errno == ENOMEM) {  // Out of memory
+                        raise(SIGSEGV);  // Raise memory error signal
+                        // Clean up already allocated memory
+                        for (int j = 0; j < *count; j++) {
+                            free(result[j]);
+                            result[j] = NULL;
+                        }
+                        *count = -1;  // Signal error
+                        return;
+                    }
                     perror("malloc");
                     // Clean up already allocated memory
                     for (int j = 0; j < *count; j++) {
@@ -818,6 +841,18 @@ void handle_sigcpu(int signo)
 void handle_sigfsz(int signo)
 {
     printf("File size limit exceeded!\n");
+    exit(1);
+}
+
+void handle_sigmem(int signo)
+{
+    printf("Memory limit exceeded!\n");
+    exit(1);
+}
+
+void handle_signof(int signo)
+{
+    printf("Open files limit exceeded!\n");
     exit(1);
 }
 

@@ -114,3 +114,8 @@ echo hi : 0.00050 sec
 sleep 5 : 5.00098 sec
 pwd : 0.00303 sec
 ls : 0.00066 sec
+pwd : 0.00110 sec
+pwd : 0.00051 sec
+ls : 0.00070 sec
+rlimit : 0.00003 sec
+ls : 0.00066 sec

@@ -690,7 +690,7 @@ int handle_rlimit(char* command[], int arg_count, FILE* exec_times, int* cmd, do
 
     if (strcmp(command[1], "show") == 0)
     {
-        struct rlimit cpu_rl, mem_rl,size_rl,files_rl;
+        struct rlimit cpu_rl, mem_rl,fsize_rl,files_rl;
         
         // Get CPU limits
         getrlimit(RLIMIT_CPU, &cpu_rl);
@@ -699,7 +699,7 @@ int handle_rlimit(char* command[], int arg_count, FILE* exec_times, int* cmd, do
         getrlimit(RLIMIT_AS, &mem_rl);
 
         // Get size limits
-        getrlimit(RLIMIT_RSS, &size_rl);
+        getrlimit(RLIMIT_FSIZE, &fsize_rl);
         
         // Get open files limits
         getrlimit(RLIMIT_NOFILE, &files_rl);
@@ -716,10 +716,10 @@ int handle_rlimit(char* command[], int arg_count, FILE* exec_times, int* cmd, do
         else
             printf("Memory: soft=%lu, hard=%lu\n", (unsigned long)mem_rl.rlim_cur, (unsigned long)mem_rl.rlim_max);
 
-        if (size_rl.rlim_cur == RLIM_INFINITY) //size limit
-            printf("Memory: soft=unlimited, hard=unlimited\n");
+        if (fsize_rl.rlim_cur == RLIM_INFINITY) //fsize limit
+            printf("File size: soft=unlimited, hard=unlimited\n");
         else
-            printf("Memory: soft=%lu, hard=%lu\n", (unsigned long)size_rl.rlim_cur, (unsigned long)size_rl.rlim_max);
+            printf("File size: soft=%lu, hard=%lu\n", (unsigned long)fsize_rl.rlim_cur, (unsigned long)fsize_rl.rlim_max);
             
         if (files_rl.rlim_cur == RLIM_INFINITY) //open files limit
             printf("Open files: soft=unlimited, hard=unlimited\n");
@@ -779,9 +779,9 @@ int handle_rlimit(char* command[], int arg_count, FILE* exec_times, int* cmd, do
                     resource_code = RLIMIT_AS;
                 
                 else if (strcmp(resource_name, "fsize") == 0)
-                    resource_code = RLIMIT_RSS;
+                    resource_code = RLIMIT_FSIZE;
                 
-                else if (strcmp(resource_name, "files") == 0)
+                else if (strcmp(resource_name, "nofile") == 0)
                     resource_code = RLIMIT_NOFILE;
 
                 else

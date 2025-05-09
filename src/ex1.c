@@ -4,10 +4,18 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <sys/wait.h>
+#include <sys/resource.h> // for setrlimit and getrlimit
+#include <signal.h> // for signal handling
+#include <ctype.h> // for isdigit function
 
 #define MAX_SIZE 1025
 #define MAX_ARG 7 // command + 6 arguments
 #define MAX_DANG 1000
+
+// Resource limit related defines
+#define BYTES_IN_KB 1024
+#define BYTES_IN_MB (1024 * 1024)
+#define BYTES_IN_GB (1024 * 1024 * 1024)
 
 int space_error(char str[]);
 void split_string(char* input, char* result[], int* count);
@@ -20,7 +28,13 @@ int check_dangerous_command(char* original_input, char* command[], char* dng_cmd
 double execute_command(char* command[], char* original_input, FILE* exec_times);
 double handle_pipe(char* input, char* original_input, FILE* exec_times, char* dng_cmds[], int dng_count, int pipe_index, int* dangerous_cmd_warning, int* dangerous_cmd_blocked);
 void handle_mytee(char * command[], int right_arg_count);
+int handle_rlimit(char* command[], int arg_count, FILE* exec_times, int* cmd, double* total_time, double* last_cmd_time, double* avg_time, double* min_time, double* max_time);
+int set_rlimit(int resource_code, int soft_limit, int hard_limit);
+int size_value(const char* value_str);
+void handle_sigcpu(int signo);
+void handle_sigfsz(int signo);
 
+struct rlimit rl;
 
 int main(int argc, char* argv[])
 {
@@ -44,6 +58,11 @@ int main(int argc, char* argv[])
     double min_time = 0;
     double max_time = 0;
 
+    signal(SIGXCPU  , handle_sigcpu); // cpu
+    signal(SIGXFSZ , handle_sigfsz); // files
+    
+
+
     while (1) // the mini-shell
     {
         printf("#cmd:%d|#dangerous_cmd_blocked:%d|last_cmd_time:%.5f|avg_time:%.5f|min_time:%.5f|max_time:%.5f>>"
@@ -61,6 +80,23 @@ int main(int argc, char* argv[])
 
         input[strcspn(input, "\n")] = 0; //remove newline character after using fgets and avoiding execvp error
         strcpy(original_input, input);
+
+        // if (strncmp(input, "rlimit", 6) == 0)
+        // {
+        //     char* new_command[MAX_ARG + 5]; // 4 max limits + NULL
+
+        //     int success = handle_rlimit(command, arg_count, exec_times, &cmd, &total_time, &last_cmd_time, &avg_time, &min_time, &max_time);
+
+        //     if (success == 0)
+        //     {
+        //        for (int i = 0; i < arg_count; i++)
+        //        {
+        //         if (command[i] != NULL) 
+        //             free(command[i]);
+        //        }
+        //     }
+        //     continue;
+        // }
 
         int flag_pipe = 0; //not a fucntion because we only want to check for one pipe
         int pipe_index;
@@ -116,6 +152,20 @@ int main(int argc, char* argv[])
 
         if (arg_count == 0) // skip empty input lines
             continue;
+
+        // Handle rlimit command -                  remove laterrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
+        if (strcmp(command[0], "rlimit") == 0)
+        {
+            if (handle_rlimit(command, arg_count, exec_times, &cmd, &total_time, &last_cmd_time, &avg_time, &min_time, &max_time))
+            {
+                for (int i = 0; i < arg_count; i++)
+                {
+                    if (command[i] != NULL)
+                        free(command[i]);
+                }
+                continue;
+            }
+        }
 
         if (strcmp(command[0], "done") == 0) //checking for done - end of terminal
         {
@@ -584,3 +634,190 @@ void handle_mytee(char * command[], int right_arg_count)
         }
     }
 }
+
+int set_rlimit(int resource_code, int soft_limit, int hard_limit)
+{
+    struct rlimit rl;
+    rl.rlim_cur = soft_limit;
+    rl.rlim_max = hard_limit;
+
+    //return 0 if successful, -1 if not
+    return setrlimit(resource_code, &rl);
+}
+
+int size_value(const char* value_str)
+{
+    int value = atoi(value_str);
+    int len = strlen(value_str);
+    
+    // Find where the numeric part ends
+    int i;
+    for (i = 0; i < len; i++) {
+        if (!isdigit(value_str[i])) {
+            break;
+        }
+    }
+    
+    // If the entire string is numeric, return the value as is
+    if (i == len) {
+        return value;
+    }
+    
+    // Get the unit part
+    const char* unit = &value_str[i];
+    
+    // Convert based on unit
+    if (strcmp(unit, "B") == 0) {
+        return value; // Bytes
+    } else if (strcmp(unit, "K") == 0 || strcmp(unit, "KB") == 0) {
+        return value * BYTES_IN_KB; // Kilobytes
+    } else if (strcmp(unit, "M") == 0 || strcmp(unit, "MB") == 0) {
+        return value * BYTES_IN_MB; // Megabytes
+    } else if (strcmp(unit, "G") == 0 || strcmp(unit, "GB") == 0) {
+        return value * BYTES_IN_GB; // Gigabytes
+    }
+    
+    // If no valid unit, return the value as is
+    return value;
+}
+
+int handle_rlimit(char* command[], int arg_count, FILE* exec_times, int* cmd, double* total_time, double* last_cmd_time, double* avg_time, double* min_time, double* max_time)
+{
+    if (arg_count < 2)
+        return 0;
+
+    int resource_code; //0 for cpu, 1 for memory, 2 for size, 3 for files
+
+    if (strcmp(command[1], "show") == 0)
+    {
+        struct rlimit cpu_rl, mem_rl,size_rl,files_rl;
+        
+        // Get CPU limits
+        getrlimit(RLIMIT_CPU, &cpu_rl);
+        
+        // Get memory limits
+        getrlimit(RLIMIT_AS, &mem_rl);
+
+        // Get size limits
+        getrlimit(RLIMIT_RSS, &size_rl);
+        
+        // Get open files limits
+        getrlimit(RLIMIT_NOFILE, &files_rl);
+
+        // Print the limits
+        
+        if (cpu_rl.rlim_cur == RLIM_INFINITY) //cpu limit
+            printf("CPU time: soft=unlimited, hard=unlimited\n");
+        else
+            printf("CPU time: soft=%lus, hard=%lus\n", (unsigned long)cpu_rl.rlim_cur, (unsigned long)cpu_rl.rlim_max);
+
+        if (mem_rl.rlim_cur == RLIM_INFINITY) //memory limit
+            printf("Memory: soft=unlimited, hard=unlimited\n");
+        else
+            printf("Memory: soft=%lu, hard=%lu\n", (unsigned long)mem_rl.rlim_cur, (unsigned long)mem_rl.rlim_max);
+
+        if (size_rl.rlim_cur == RLIM_INFINITY) //size limit
+            printf("Memory: soft=unlimited, hard=unlimited\n");
+        else
+            printf("Memory: soft=%lu, hard=%lu\n", (unsigned long)size_rl.rlim_cur, (unsigned long)size_rl.rlim_max);
+            
+        if (files_rl.rlim_cur == RLIM_INFINITY) //open files limit
+            printf("Open files: soft=unlimited, hard=unlimited\n");
+        else
+            printf("Open files: soft=%lu, hard=%lu\n", (unsigned long)files_rl.rlim_cur, (unsigned long)files_rl.rlim_max);
+
+        return 1;
+    }
+    
+    if (strcmp(command[1], "set") == 0)
+    {
+        if (arg_count < 3)
+        {
+            printf("ERR\n");
+            return 0;
+        }
+
+        for (int i = 2; i < arg_count; i++)
+        {
+            char resource_name[MAX_SIZE];
+            char value_str[MAX_SIZE];
+            int hard_limit;
+            int soft_limit;
+
+            int new_index = 2; //rlimit + set arg
+
+            if (strchr(command[i], '=') != NULL)
+            {
+                new_index++; //to have the correct index for the new command
+
+                //extracting resource name and value
+                strncpy(resource_name, command[i], strchr(command[i], '=') - command[i]);
+                resource_name[strchr(command[i], '=') - command[i]] = '\0';
+                strcpy(value_str, strchr(command[i], '=') + 1);
+
+                //checking if there are hard and soft limits
+                if (strchr(value_str, ':') != NULL)
+                {
+                    //extracting hard and soft limits
+                    char temp[MAX_SIZE];
+                    strncpy(temp, value_str, strchr(value_str, ':') - value_str);
+                    temp[strchr(value_str, ':') - value_str] = '\0';
+                    soft_limit = size_value(temp);
+                    hard_limit = size_value(strchr(value_str, ':') + 1);
+                }
+                else
+                {
+                    soft_limit = size_value(value_str);
+                    hard_limit = size_value(value_str);
+                }
+
+                //checking the resource name and setting the correct limit
+                if (strcmp(resource_name, "cpu") == 0)
+                    resource_code = RLIMIT_CPU;
+                
+                else if (strcmp(resource_name, "mem") == 0)
+                    resource_code = RLIMIT_AS;
+                
+                else if (strcmp(resource_name, "size") == 0)
+                    resource_code = RLIMIT_RSS;
+                
+                else if (strcmp(resource_name, "files") == 0)
+                    resource_code = RLIMIT_NOFILE;
+                    
+                else
+                {
+                    perror("not a valid resource");
+                    return 0;
+                }
+
+                if(set_rlimit(resource_code, soft_limit, hard_limit) == -1) 
+                {
+                    perror("setrlimit");
+                    return 0;
+                }
+                
+            }
+
+            // char* new_command[MAX_ARG + 1 - 2]; // -2 because we already have the rlimit and set arg
+
+
+
+
+        }
+        return 1;
+    }
+    return 0;
+}
+
+void handle_sigcpu(int signo)
+{
+    printf("CPU time limit exceeded!\n");
+    exit(1);
+}
+
+void handle_sigfsz(int signo)
+{
+    printf("File size limit exceeded!\n");
+    exit(1);
+}
+

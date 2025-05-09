@@ -103,3 +103,11 @@ grep h : 0.00073 sec
 echo hellp  : 0.00078 sec
 grep e : 0.00078 sec
 echo hello  : 0.00070 sec
+pwd : 0.00127 sec
+ls : 0.00073 sec
+pwd : 0.00056 sec
+sleep : 10.00481 sec
+sleep 10 : 10.00165 sec
+sleep : 2.00000 sec (terminated due to CPU limit)
+echo h h h h h h : 0.00098 sec
+echo hi : 0.00050 sec

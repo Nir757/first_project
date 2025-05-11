@@ -188,25 +188,15 @@ int main(int argc, char* argv[])
         if (strncmp(input, "rlimit", 6) == 0)
         {
             char** cmd_array = rlimit_set_flag ? rlimit_command : command;
-            if (handle_rlimit(cmd_array, arg_count, exec_times, &cmd, &total_time, &last_cmd_time, &avg_time, &min_time, &max_time))
+            handle_rlimit(cmd_array, arg_count, exec_times, &cmd, &total_time, &last_cmd_time, &avg_time, &min_time, &max_time);
+            
+            // Cleanup code
+            for (int i = 0; i < arg_count; i++)
             {
-                for (int i = 0; i < arg_count; i++)
-                {
-                    if (cmd_array[i] != NULL)
-                        free(cmd_array[i]);
-                }
-                continue;
+                if (cmd_array[i] != NULL)
+                    free(cmd_array[i]);
             }
-            else // handle_rlimit returned 0 (error)
-            {
-                // Free command args as they were parsed for this attempt
-                for (int i = 0; i < arg_count; i++)
-                {
-                    if (cmd_array[i] != NULL)
-                        free(cmd_array[i]);
-                }
-                continue; // Continue to next prompt
-            }
+            continue; 
         }
 
         if (strcmp(command[0], "done") == 0) //checking for done - end of terminal
@@ -243,7 +233,8 @@ int main(int argc, char* argv[])
             update_timing_stats(runtime, &cmd, &total_time, &last_cmd_time, &avg_time, &min_time, &max_time, exec_times, original_input);
         }
 
-        for (int i = 0; i < arg_count; i++) {
+        for (int i = 0; i < arg_count; i++) 
+        {
             free(command[i]);
         }
     }
@@ -267,7 +258,7 @@ FILE* open_file(char* filename, char* mode)
     {
         if (errno == EMFILE) {  // Too many open files
             raise(SIGUSR1);  // Raise our custom signal
-            return NULL;
+            return NULL; //return NULL to indicate error 
         }
         fprintf(stderr, "ERR\n");
         exit(1);
@@ -406,13 +397,6 @@ int check_dangerous_command(char* original_input, char* command[], char* dng_cmd
 
 double execute_command(char* command[], char* original_input, FILE* exec_times)
 {
-    // char print_err[MAX_SIZE];
-    // int danger_status = check_dangerous_command(original_input, command, dng_cmds, dng_count, print_err, dangerous_cmd_warning, dangerous_cmd_blocked, arg_count);
-    // if (danger_status == 1)
-    // {
-    //     return -1;
-    // }
-
     pid_t pid;
     int background = 0;
     char* stderr_file = NULL;
@@ -983,13 +967,13 @@ void handle_sigfsz(int signo)
 
 void handle_sigmem(int signo)
 {
-    printf("Memory limit exceeded!\n");
+    printf("Memory allocation failed!\n");
     exit(1);
 }
 
 void handle_signof(int signo)
 {
-    printf("Open files limit exceeded!\n");
+    printf("Too many open files!\n");
     exit(1);
 }
 

@@ -9,6 +9,7 @@
 #include <ctype.h> // for isdigit function
 #include <errno.h> // for errno - memory and files errors
 #include <sys/types.h>
+#include <fcntl.h> // for open function
 
 #define MAX_SIZE 1025
 #define MAX_ARG 7 // command + 6 arguments
@@ -395,6 +396,8 @@ double execute_command(char* command[], char* original_input, FILE* exec_times)
 {
     pid_t pid;
     int background = 0;
+    char* stderr_file = NULL;
+    int stderr_index = -1;
     
     // Check if command should run in background
     int last_arg = 0;
@@ -415,6 +418,21 @@ double execute_command(char* command[], char* original_input, FILE* exec_times)
         }
     }
 
+    // Check for stderr redirection
+    for (int i = 0; command[i] != NULL; i++) {
+        if (strcmp(command[i], "2>") == 0) {
+            if (command[i+1] != NULL) {
+                stderr_file = command[i+1];
+                stderr_index = i;
+                // Remove the 2> and filename from command
+                for (int j = i; command[j] != NULL; j++) {
+                    command[j] = (j+2 < last_arg) ? command[j+2] : NULL;
+                }
+                break;
+            }
+        }
+    }
+
     pid = fork();
     if (pid < 0)
     {
@@ -423,6 +441,17 @@ double execute_command(char* command[], char* original_input, FILE* exec_times)
     }
     else if (pid == 0)
     {
+        // Handle stderr redirection in child process
+        if (stderr_file != NULL) {
+            int fd = open(stderr_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (fd == -1) {
+                perror("open");
+                exit(1);
+            }
+            dup2(fd, STDERR_FILENO);
+            close(fd);
+        }
+
         execvp(command[0], command);
         perror("execvp");
         exit(1);

@@ -8,7 +8,7 @@
 #include <signal.h> // for signal handling
 #include <ctype.h> // for isdigit function
 #include <errno.h> // for errno - memory and files errors
-#include <sys/types.h>
+#include <sys/types.h> // for pid_t
 #include <fcntl.h> // for open function
 
 #define MAX_SIZE 1025
@@ -19,6 +19,8 @@
 #define BYTES_IN_KB 1024
 #define BYTES_IN_MB (1024 * 1024)
 #define BYTES_IN_GB (1024 * 1024 * 1024)
+
+#define MAX_BG_PROCESSES 100
 
 int space_error(char str[]);
 void split_string(char* input, char* result[], int* count, int rlimit_flag);
@@ -40,61 +42,68 @@ void handle_sigfsz(int signo);
 void handle_sigmem(int signo);
 void handle_signof(int signo);
 void handle_sigchild(int signo);
+int check_process_status(int status, pid_t pid, const char* cmd_name, FILE* exec_file, double runtime, int is_background);
 
-#define MAX_BG_PROCESSES 100
-struct bg_process {
+
+struct bg_process 
+{
     pid_t pid;
     struct timeval start_time;
     char command[MAX_SIZE];
 };
+
 struct bg_process bg_processes[MAX_BG_PROCESSES];
 int bg_count = 0;
-FILE* global_exec_times = NULL; // Global pointer to exec_times file
+FILE* global_exec_times = NULL; 
 
 struct rlimit rl;
 
-    int cmd = 0;
-    int dangerous_cmd_blocked = 0;
-    int dangerous_cmd_warning = 0;
+int cmd = 0;
+int dangerous_cmd_blocked = 0;
+int dangerous_cmd_warning = 0;
 
-    double last_cmd_time = 0;
-    double total_time = 0;
-    double avg_time = 0;
-    double min_time = 0;
-    double max_time = 0;
+double last_cmd_time = 0;
+double total_time = 0;
+double avg_time = 0;
+double min_time = 0;
+double max_time = 0;
 
 int main(int argc, char* argv[])
 {
+    //signal handlers
     signal(SIGXCPU  , handle_sigcpu); // cpu
     signal(SIGXFSZ , handle_sigfsz); // files
     signal(SIGSEGV, handle_sigmem); // memory
     signal(SIGUSR1, handle_signof); // open files - using SIGUSR1 as a custom signal
-    signal(SIGCHLD, handle_sigchild); // Add SIGCHLD handler for background processes
+    signal(SIGCHLD, handle_sigchild); //SIGCHLD handler for background processes
 
+    //check for having two files as input
     input_arg_check(argc);
 
+    //open files
     FILE* dangerous_commands = open_file(argv[1], "r");
     FILE* exec_times = open_file(argv[2], "a");
-    global_exec_times = exec_times; // Store in global for signal handler
+    global_exec_times = exec_times; // assigns a local pointer to the global pointer
 
+    //load dangerous commands
     char* dng_cmds[MAX_DANG];
     int dng_count = load_dangerous_commands(dangerous_commands, dng_cmds);
 
     fclose(dangerous_commands);
 
-    
-
-    while (1) // the mini-shell
+    // the mini-shell
+    while (1) 
     {
         printf("#cmd:%d|#dangerous_cmd_blocked:%d|last_cmd_time:%.5f|avg_time:%.5f|min_time:%.5f|max_time:%.5f>>"
                 ,cmd,dangerous_cmd_blocked,last_cmd_time,avg_time,min_time,max_time);
 
-        char input[MAX_SIZE]; //input str
+        char input[MAX_SIZE]; //input string
         char original_input[MAX_SIZE]; //to have the original after using splitting
         char* command[MAX_ARG + 1]; //array for arguments + NULL
         char* rlimit_command[MAX_ARG + 5]; //array for rlimit commands + NULL
 
-        if (fgets(input, MAX_SIZE, stdin) == NULL) //getting input
+        //getting input
+        if (fgets(input, MAX_SIZE, stdin) == NULL) 
         {
             perror("fgets");
             exit(1);
@@ -103,17 +112,18 @@ int main(int argc, char* argv[])
         input[strcspn(input, "\n")] = 0; //remove newline character after using fgets and avoiding execvp error
         strcpy(original_input, input);
 
+        //check for rlimit
         int rlimit_set_flag = 0;
         if (strncmp(input, "rlimit set", 10) == 0)
             rlimit_set_flag = 1;
 
+        //check for pipe
         int flag_pipe = 0; //not a fucntion because we only want to check for one pipe
         int pipe_index;
         for (pipe_index = 0; pipe_index < strlen(input); pipe_index++)
         {
             if (input[pipe_index] == '|')
                 {
-
                     if(input[pipe_index - 1] == ' ' && input[pipe_index + 1] == ' ') // Only set flag_pipe if there are spaces on both sides
                     {
                         flag_pipe = 1;
@@ -122,10 +132,12 @@ int main(int argc, char* argv[])
                 }
         }
 
+        //handle pipe
         if (flag_pipe == 1)
         {
             double runtime = handle_pipe(input, original_input, exec_times, dng_cmds, dng_count, pipe_index, &dangerous_cmd_warning, &dangerous_cmd_blocked);
 
+            //not using the timing fucntion because it has special timing for pipe
             if (runtime >= 0) // Both commands succeeded
             {
                 cmd += 2;  // Both commands were valid and ran
@@ -394,10 +406,16 @@ int check_dangerous_command(char* original_input, char* command[], char* dng_cmd
 
 double execute_command(char* command[], char* original_input, FILE* exec_times)
 {
+    // char print_err[MAX_SIZE];
+    // int danger_status = check_dangerous_command(original_input, command, dng_cmds, dng_count, print_err, dangerous_cmd_warning, dangerous_cmd_blocked, arg_count);
+    // if (danger_status == 1)
+    // {
+    //     return -1;
+    // }
+
     pid_t pid;
     int background = 0;
     char* stderr_file = NULL;
-    int stderr_index = -1;
     
     // Check if command should run in background
     int last_arg = 0;
@@ -423,7 +441,6 @@ double execute_command(char* command[], char* original_input, FILE* exec_times)
         if (strcmp(command[i], "2>") == 0) {
             if (command[i+1] != NULL) {
                 stderr_file = command[i+1];
-                stderr_index = i;
                 // Remove the 2> and filename from command
                 for (int j = i; command[j] != NULL; j++) {
                     command[j] = (j+2 < last_arg) ? command[j+2] : NULL;
@@ -468,10 +485,7 @@ double execute_command(char* command[], char* original_input, FILE* exec_times)
             gettimeofday(&end, NULL);
             double runtime = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1000000.0;
 
-            if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
-            {
-                fprintf(exec_times, "%s : %.5f sec\n", original_input, runtime);
-                fflush(exec_times);
+            if (check_process_status(status, pid, original_input, exec_times, runtime, 0)) {
                 return runtime;
             }
             return -1;
@@ -564,8 +578,8 @@ double handle_pipe(char* input, char* original_input, FILE* exec_times, char* dn
     struct timeval start, end;
     double runtime = 0;
 
-    strncpy(input_left, input, pipe_index);//splitting to left
-    input_left[pipe_index] = '\0';
+    strncpy(input_left, input, pipe_index-1);//splitting to left
+    input_left[pipe_index-1] = '\0';
 
     int right_start = pipe_index + 2; // +2 to skip the the first space
     strcpy(input_right, &input[right_start]); //splitting to right
@@ -674,26 +688,17 @@ double handle_pipe(char* input, char* original_input, FILE* exec_times, char* dn
             gettimeofday(&end, NULL);
             runtime = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1000000.0;
 
-            // Write both commands to exec_times with the same runtime
-            if (WIFEXITED(status1) && WEXITSTATUS(status1) == 0)
-            {
-                fprintf(exec_times, "%s : %.5f sec\n", input_left, runtime);
-                fflush(exec_times);
-            }
-
-            if (WIFEXITED(status2) && WEXITSTATUS(status2) == 0)
-            {
-                fprintf(exec_times, "%s : %.5f sec\n", input_right, runtime);
-                fflush(exec_times);
-            }
+            // Check status of left command
+            int left_success = check_process_status(status1, pid_left, input_left, exec_times, runtime, 0);
+            
+            // Check status of right command
+            int right_success = check_process_status(status2, pid_right, input_right, exec_times, runtime, 0);
 
             free_resources(left_command, left_arg_count, NULL, 0);
             free_resources(right_command, right_arg_count, NULL, 0);
 
             // Return the runtime if both commands succeeded
-            if (WIFEXITED(status1) && WEXITSTATUS(status1) == 0 &&
-                WIFEXITED(status2) && WEXITSTATUS(status2) == 0)
-            {
+            if (left_success && right_success) {
                 return runtime;
             }
             return -1;  // Command failed
@@ -953,7 +958,7 @@ int handle_rlimit(char* command[], int arg_count, FILE* exec_times, int* cmd, do
             gettimeofday(&end, NULL);
             double runtime = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1000000.0;
 
-            if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+            if (check_process_status(status, pid, command[cmd_start], exec_times, runtime, 0)) {
                 // Update timing statistics using the new function
                 update_timing_stats(runtime, cmd, total_time, last_cmd_time, avg_time, min_time, max_time, exec_times, command[cmd_start]);
             }
@@ -992,54 +997,36 @@ void handle_sigchild(int signo) {
     pid_t pid;
     int status;
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-        if (WIFEXITED(status)) {
-            // Find the background process in our array
-            for (int i = 0; i < bg_count; i++) {
-                if (bg_processes[i].pid == pid) {
-                    // Calculate runtime
-                    struct timeval end;
-                    gettimeofday(&end, NULL);
-                    double runtime = (end.tv_sec - bg_processes[i].start_time.tv_sec) + 
-                                   (end.tv_usec - bg_processes[i].start_time.tv_usec) / 1000000.0;
-                    
-                    // Use the update_timing_stats function to update stats
-                    if (WEXITSTATUS(status) == 0) {
-                        
-                        
-                        // Update stats and write to exec_times file
-                        update_timing_stats(runtime, &cmd, &total_time, &last_cmd_time, 
-                                           &avg_time, &min_time, &max_time, 
-                                           global_exec_times, bg_processes[i].command);
-                        
-                        // Print the prompt with updated stats
-                        printf("\n#cmd:%d|#dangerous_cmd_blocked:%d|last_cmd_time:%.5f|avg_time:%.5f|min_time:%.5f|max_time:%.5f>>",
-                              cmd, dangerous_cmd_blocked, last_cmd_time, avg_time, min_time, max_time);
-                        fflush(stdout);
-                    } else {
-                        // Print failure message
-                        printf("\nBackground process [%d] failed: %s with status %d\n", 
-                              pid, bg_processes[i].command, WEXITSTATUS(status));
-                        
-                        // Write failure message to exec_times file
-                        if (global_exec_times != NULL) {
-                            fprintf(global_exec_times, "%s : failed with status %d (background)\n", 
-                                   bg_processes[i].command, WEXITSTATUS(status));
-                            fflush(global_exec_times);
-                        }
-                        
-                        // Print the prompt with unchanged stats
-                        printf("#cmd:%d|#dangerous_cmd_blocked:%d|last_cmd_time:%.5f|avg_time:%.5f|min_time:%.5f|max_time:%.5f>>",
-                              cmd, dangerous_cmd_blocked, last_cmd_time, avg_time, min_time, max_time);
-                        fflush(stdout);
-                    }
-                    
-                    // Remove the completed process from our array
-                    for (int j = i; j < bg_count - 1; j++) {
-                        bg_processes[j] = bg_processes[j + 1];
-                    }
-                    bg_count--;
-                    break;
+        // Find the background process in our array
+        for (int i = 0; i < bg_count; i++) {
+            if (bg_processes[i].pid == pid) {
+                // Calculate runtime
+                struct timeval end;
+                gettimeofday(&end, NULL);
+                double runtime = (end.tv_sec - bg_processes[i].start_time.tv_sec) + 
+                               (end.tv_usec - bg_processes[i].start_time.tv_usec) / 1000000.0;
+                
+                // Check process status and handle accordingly
+                int success = check_process_status(status, pid, bg_processes[i].command, global_exec_times, runtime, 1);
+                
+                if (success) {
+                    // Success case - update stats
+                    update_timing_stats(runtime, &cmd, &total_time, &last_cmd_time, 
+                                       &avg_time, &min_time, &max_time, 
+                                       global_exec_times, bg_processes[i].command);
                 }
+                
+                // Print the prompt with updated or unchanged stats
+                printf("#cmd:%d|#dangerous_cmd_blocked:%d|last_cmd_time:%.5f|avg_time:%.5f|min_time:%.5f|max_time:%.5f>>",
+                      cmd, dangerous_cmd_blocked, last_cmd_time, avg_time, min_time, max_time);
+                fflush(stdout);
+                
+                // Remove the completed process from our array
+                for (int j = i; j < bg_count - 1; j++) {
+                    bg_processes[j] = bg_processes[j + 1];
+                }
+                bg_count--;
+                break;
             }
         }
     }
@@ -1047,8 +1034,7 @@ void handle_sigchild(int signo) {
 
 // Function to handle time measurements and update statistics
 void update_timing_stats(double runtime, int* cmd, double* total_time, double* last_cmd_time, 
-                        double* avg_time, double* min_time, double* max_time, 
-                        FILE* exec_times, const char* command_name)
+        double* avg_time, double* min_time, double* max_time, FILE* exec_times, const char* command_name)
 {
     (*cmd)++;
     *last_cmd_time = runtime;
@@ -1064,5 +1050,72 @@ void update_timing_stats(double runtime, int* cmd, double* total_time, double* l
     // Write to exec_times file
     fprintf(exec_times, "%s : %.5f sec\n", command_name, runtime);
     fflush(exec_times);
+}
+
+int check_process_status(int status, pid_t pid, const char* cmd_name, FILE* exec_file, double runtime, int is_background)
+{
+    if (WIFEXITED(status)) {
+        int exit_code = WEXITSTATUS(status);
+        if (exit_code == 0) {
+            if (exec_file != NULL) {
+                if (is_background) {
+                    fprintf(exec_file, "%s : %.5f sec (background)\n", cmd_name, runtime);
+                } else {
+                    fprintf(exec_file, "%s : %.5f sec\n", cmd_name, runtime);
+                }
+                fflush(exec_file);
+            }
+            return 1; // Success
+        } else {
+            if (is_background) {
+                printf("\nBackground process [%d] failed: %s with exit code %d\n", pid, cmd_name, exit_code);
+                if (exec_file != NULL) {
+                    fprintf(exec_file, "%s : failed with exit code %d (background)\n", cmd_name, exit_code);
+                    fflush(exec_file);
+                }
+            } else {
+                printf("Error: Command '%s' exited with code %d\n", cmd_name, exit_code);
+            }
+            return 0; // Failure
+        }
+    } else if (WIFSIGNALED(status)) {
+        int signal_num = WTERMSIG(status);
+        
+        if (is_background) {
+            printf("\nBackground process [%d] terminated by signal: ", pid);
+        } else {
+            printf("Error: Command '%s' terminated by signal: ", cmd_name);
+        }
+        
+        // Print signal name based on number
+        switch (signal_num) {
+            case SIGSEGV: printf("SIGSEGV"); break;
+            case SIGINT: printf("SIGINT"); break;
+            case SIGTERM: printf("SIGTERM"); break;
+            case SIGKILL: printf("SIGKILL"); break;
+            case SIGABRT: printf("SIGABRT"); break;
+            case SIGFPE: printf("SIGFPE"); break;
+            case SIGILL: printf("SIGILL"); break;
+            case SIGPIPE: printf("SIGPIPE"); break;
+            case SIGQUIT: printf("SIGQUIT"); break;
+            case SIGTRAP: printf("SIGTRAP"); break;
+            case SIGXCPU: printf("SIGXCPU"); break;
+            case SIGXFSZ: printf("SIGXFSZ"); break;
+            default: printf("Signal %d", signal_num);
+        }
+        
+        if (is_background) {
+            printf(" - %s\n", cmd_name);
+            if (exec_file != NULL) {
+                fprintf(exec_file, "%s : terminated by signal %d (background)\n", cmd_name, signal_num);
+                fflush(exec_file);
+            }
+        } else {
+            printf("\n");
+        }
+        
+        return 0; // Failure
+    }
+    return 0; // Failure
 }
 

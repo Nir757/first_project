@@ -256,3 +256,53 @@ pwd : 0.00052 sec
 ls : 0.00069 sec
 ls : 0.00069 sec
 sleep 5 & : 5.00063 sec
+rlimit : 0.00003 sec
+rlimit show  : 0.01686 sec
+ls : 0.00065 sec
+ls : 0.00065 sec
+pwd : 0.00168 sec
+pwd : 0.00168 sec
+ls : 0.00081 sec
+ls : 0.00081 sec
+ls : 0.00067 sec
+ls : 0.00067 sec
+echo : 0.00102 sec
+echo : 0.00102 sec
+ls : 0.00066 sec
+ls : 0.00066 sec
+pwd : 0.00054 sec
+pwd : 0.00054 sec
+ls : 0.00067 sec
+ls : 0.00067 sec
+echo hi its me  : 0.00074 sec
+my_tee tee.txt tee1.txt : 0.00074 sec
+echo hi its me  : 0.00075 sec
+my_tee tee.txt tee1.txt : 0.00075 sec
+ls -m -a -n  : 0.00617 sec
+my_tee tee.txt : 0.00617 sec
+ls : 0.00070 sec
+ls : 0.00070 sec
+echo hi its me  : 0.02313 sec
+echo hi its me  : 0.00070 sec
+my_tee tee.txt : 0.00070 sec
+echo hi : 0.00119 sec
+echo hi : 0.00119 sec
+echo hi : 0.00053 sec
+ echo hi : 0.00053 sec
+echo hi : 0.00111 sec
+ echo hi : 0.00111 sec
+echo hi : 0.00059 sec
+ echo hi : 0.00059 sec
+echo hi : 0.02360 sec
+echo hi : 0.00056 sec
+echo hi : 0.00056 sec
+echo hi : 0.00069 sec
+my_tee tee.txt : 0.00069 sec
+echo hi : 0.00077 sec
+my_tee tee.txt : 0.00077 sec
+ls : 0.02209 sec
+ls : 0.00067 sec
+echo hello : 0.00070 sec
+grep h : 0.00070 sec
+echo h h h h h h : 0.00047 sec
+echo h h h h h h : 0.00047 sec

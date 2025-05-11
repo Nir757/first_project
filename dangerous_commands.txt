@@ -3,7 +3,7 @@ rm -rf /
 
 sudo reboot 
 
-echo hi its me 
+echo hi its me
 
 ls -m -a -n
 

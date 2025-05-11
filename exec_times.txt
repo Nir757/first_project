@@ -119,3 +119,140 @@ pwd : 0.00051 sec
 ls : 0.00070 sec
 rlimit : 0.00003 sec
 ls : 0.00066 sec
+sleep : 5.00069 sec
+./test_limits : 0.00049 sec
+./test_limits : 0.00054 sec
+sleep : 10.00079 sec
+sleep : 10.00057 sec
+sleep : 5.00062 sec
+dd : 0.04052 sec
+rlimit : 0.00001 sec
+echo test  : 0.02371 sec
+echo test  : 0.00142 sec
+my_tee output.txt : 0.00142 sec
+cat output.txt : 0.00130 sec
+echo test_run : 0.00049 sec
+echo test_run : 0.00049 sec
+rlimit : 0.00004 sec
+pwd : 0.00185 sec
+pwd : 0.00185 sec
+ls : 0.00070 sec
+ls : 0.00070 sec
+echo hi  : 0.00123 sec
+my_tee output.txt : 0.00123 sec
+echo hi  : 0.00064 sec
+my_tee -a output.txt : 0.00064 sec
+ls : 0.00070 sec
+sleep 10& : started in background (pid: 11345)
+Background process 11345 completed
+sleep 5 & : started in background (pid: 11477)
+Background process 11477 completed
+ls : 4.03484 sec
+ls : 4.03484 sec
+sleep 5 : 5.00061 sec
+sleep 5 : 5.00061 sec
+ls : 0.00070 sec
+ls : 0.00070 sec
+Background process 12301 completed
+ls : 3.78137 sec
+ls : 3.78137 sec
+ls : 0.00064 sec
+ls : 0.00064 sec
+sleep 5& : started in background (pid: 13729)
+Background process 13729 completed
+ls : 3.44763 sec
+ls : 3.44763 sec
+sleep 5 &  : started in background (pid: 14952)
+Background process 14952 completed
+ls : 3.81920 sec
+ls : 3.81920 sec
+pwd : 0.00384 sec
+pwd : 0.00384 sec
+ls : 0.00062 sec
+ls : 0.00062 sec
+echo 'test' : 0.00105 sec
+echo 'test' : 0.00105 sec
+ps : 0.00280 sec
+ps : 0.00280 sec
+sleep 1 : 1.00053 sec
+sleep 1 : 1.00053 sec
+ls : 0.00061 sec
+ls : 0.00061 sec
+echo 'test' : 0.00044 sec
+echo 'test' : 0.00044 sec
+ps : 0.00255 sec
+ps : 0.00255 sec
+sleep 1 : 1.00059 sec
+sleep 1 : 1.00059 sec
+pwd : 0.00057 sec
+pwd : 0.00057 sec
+ls : 0.00065 sec
+ls : 0.00065 sec
+sleep 5 & : 0.00000 sec
+ls : 0.00069 sec
+ls : 0.00069 sec
+Background process 17446 completed : 1.00000 sec
+sleep 5 & : 0.00000 sec
+ls : 0.00067 sec
+ls : 0.00067 sec
+pwd : 0.00051 sec
+pwd : 0.00051 sec
+Background process 17657 completed : 1.00000 sec
+sleep 5& : 0.00000 sec
+ls : 0.00072 sec
+ls : 0.00072 sec
+sleep 3 & : 0.00000 sec
+echo 'test' : 0.00053 sec
+echo 'test' : 0.00053 sec
+ps : 0.00268 sec
+ps : 0.00268 sec
+sleep 1 : 1.00054 sec
+sleep 1 : 1.00054 sec
+sleep 5& : 0.00000 sec
+ls : 0.00067 sec
+ls : 0.00067 sec
+pwd : 0.00049 sec
+pwd : 0.00049 sec
+Background process 18251 completed successfully
+sleep 5& : 0.00000 sec
+pwd : 0.00055 sec
+pwd : 0.00055 sec
+ls : 0.00068 sec
+ls : 0.00068 sec
+sleep 5& : 5.00062 sec (background)
+sleep 5& : 0.00000 sec
+pwd : 0.00051 sec
+pwd : 0.00051 sec
+ls : 0.00068 sec
+ls : 0.00068 sec
+sleep 5& : 5.00059 sec (background)
+ls : 0.00069 sec
+ls : 0.00069 sec
+ls : 0.00071 sec
+ls : 0.00071 sec
+pwd : 0.00053 sec
+pwd : 0.00053 sec
+sleep 5 & : 0.00000 sec
+pwd : 0.00051 sec
+pwd : 0.00051 sec
+ls : 0.00072 sec
+ls : 0.00072 sec
+sleep 5 & : 5.00067 sec
+h & : 0.00000 sec
+h & : failed with status 1 (background)
+sleep 5& : 0.00000 sec
+pwd : 0.00115 sec
+pwd : 0.00115 sec
+ls : 0.00069 sec
+ls : 0.00069 sec
+sleep 5& : 6.11252 sec
+sleep 5& : 0.00000 sec
+pwd : 0.00053 sec
+pwd : 0.00053 sec
+sleep 5& : 5.00063 sec
+sleep 5 & : 0.00000 sec
+pwd : 0.00052 sec
+pwd : 0.00052 sec
+ls : 0.00069 sec
+ls : 0.00069 sec
+sleep 5 & : 5.00063 sec

@@ -8,6 +8,7 @@
 #include <signal.h> // for signal handling
 #include <ctype.h> // for isdigit function
 #include <errno.h> // for errno - memory and files errors
+#include <sys/types.h>
 
 #define MAX_SIZE 1025
 #define MAX_ARG 7 // command + 6 arguments
@@ -27,6 +28,7 @@ int split_and_validate(char* input, char* original_input, char* command[], int r
 void free_resources(char* command[], int arg_count, char* dng_cmds[], int dng_count);
 int check_dangerous_command(char* original_input, char* command[], char* dng_cmds[], int dng_count, char* print_err, int* dangerous_cmd_warning, int* dangerous_cmd_blocked, int arg_count);
 double execute_command(char* command[], char* original_input, FILE* exec_times);
+void update_timing_stats(double runtime, int* cmd, double* total_time, double* last_cmd_time, double* avg_time, double* min_time, double* max_time, FILE* exec_times, const char* command_name);
 double handle_pipe(char* input, char* original_input, FILE* exec_times, char* dng_cmds[], int dng_count, int pipe_index, int* dangerous_cmd_warning, int* dangerous_cmd_blocked);
 void handle_mytee(char * command[], int right_arg_count);
 int handle_rlimit(char* command[], int arg_count, FILE* exec_times, int* cmd, double* total_time, double* last_cmd_time, double* avg_time, double* min_time, double* max_time);
@@ -36,20 +38,19 @@ void handle_sigcpu(int signo);
 void handle_sigfsz(int signo);
 void handle_sigmem(int signo);
 void handle_signof(int signo);
+void handle_sigchild(int signo);
+
+#define MAX_BG_PROCESSES 100
+struct bg_process {
+    pid_t pid;
+    struct timeval start_time;
+    char command[MAX_SIZE];
+};
+struct bg_process bg_processes[MAX_BG_PROCESSES];
+int bg_count = 0;
+FILE* global_exec_times = NULL; // Global pointer to exec_times file
 
 struct rlimit rl;
-
-int main(int argc, char* argv[])
-{
-    input_arg_check(argc);
-
-    FILE* dangerous_commands = open_file(argv[1], "r");
-    FILE* exec_times = open_file(argv[2], "a");
-
-    char* dng_cmds[MAX_DANG];
-    int dng_count = load_dangerous_commands(dangerous_commands, dng_cmds);
-
-    fclose(dangerous_commands);
 
     int cmd = 0;
     int dangerous_cmd_blocked = 0;
@@ -61,12 +62,26 @@ int main(int argc, char* argv[])
     double min_time = 0;
     double max_time = 0;
 
+int main(int argc, char* argv[])
+{
     signal(SIGXCPU  , handle_sigcpu); // cpu
     signal(SIGXFSZ , handle_sigfsz); // files
     signal(SIGSEGV, handle_sigmem); // memory
     signal(SIGUSR1, handle_signof); // open files - using SIGUSR1 as a custom signal
-    
+    signal(SIGCHLD, handle_sigchild); // Add SIGCHLD handler for background processes
 
+    input_arg_check(argc);
+
+    FILE* dangerous_commands = open_file(argv[1], "r");
+    FILE* exec_times = open_file(argv[2], "a");
+    global_exec_times = exec_times; // Store in global for signal handler
+
+    char* dng_cmds[MAX_DANG];
+    int dng_count = load_dangerous_commands(dangerous_commands, dng_cmds);
+
+    fclose(dangerous_commands);
+
+    
 
     while (1) // the mini-shell
     {
@@ -212,18 +227,7 @@ int main(int argc, char* argv[])
 
         if (runtime >= 0) // Command executed successfully
         {
-            cmd++;
-            total_time += runtime;
-            last_cmd_time = runtime;
-            avg_time = total_time / cmd;
-
-            if (runtime > max_time)
-                max_time = runtime;
-
-            if (runtime < min_time || min_time == 0)
-            {
-                min_time = runtime;
-            }
+            update_timing_stats(runtime, &cmd, &total_time, &last_cmd_time, &avg_time, &min_time, &max_time, exec_times, original_input);
         }
 
         for (int i = 0; i < arg_count; i++) {
@@ -390,6 +394,27 @@ int check_dangerous_command(char* original_input, char* command[], char* dng_cmd
 double execute_command(char* command[], char* original_input, FILE* exec_times)
 {
     pid_t pid;
+    int background = 0;
+    
+    // Check if command should run in background
+    int last_arg = 0;
+    while (command[last_arg] != NULL) last_arg++;
+    
+    // Check for & in the last argument
+    if (last_arg > 0) {
+        char* last_arg_str = command[last_arg-1];
+        int len = strlen(last_arg_str);
+        if (len > 0 && last_arg_str[len-1] == '&') {
+            background = 1;
+            // Remove & from the end of the argument
+            last_arg_str[len-1] = '\0';
+            // If the argument is now empty after removing &, remove it entirely
+            if (len == 1) {
+                command[last_arg-1] = NULL;
+            }
+        }
+    }
+
     pid = fork();
     if (pid < 0)
     {
@@ -404,25 +429,36 @@ double execute_command(char* command[], char* original_input, FILE* exec_times)
     }
     else
     {
-        struct timeval start, end; //gettimeofday return a special variable type
+        struct timeval start, end;
         gettimeofday(&start, NULL);
 
-        int status;
-        wait(&status);
+        if (!background) {
+            // For foreground processes, wait normally
+            int status;
+            waitpid(pid, &status, 0);
+            gettimeofday(&end, NULL);
+            double runtime = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1000000.0;
 
-        gettimeofday(&end, NULL);
-
-        double runtime = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1000000.0;
-
-        if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
-        {
-            fprintf(exec_times, "%s : %.5f sec\n", original_input, runtime);
-            fflush(exec_times);
-            return runtime;
+            if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+            {
+                fprintf(exec_times, "%s : %.5f sec\n", original_input, runtime);
+                fflush(exec_times);
+                return runtime;
+            }
+            return -1;
+        } else {
+            // For background processes, store start time and return immediately
+            if (bg_count < MAX_BG_PROCESSES) {
+                bg_processes[bg_count].pid = pid;
+                bg_processes[bg_count].start_time = start;
+                strncpy(bg_processes[bg_count].command, original_input, MAX_SIZE - 1);
+                bg_processes[bg_count].command[MAX_SIZE - 1] = '\0';
+                bg_count++;
+            }
+            return 0; // Return 0 to indicate background process started
         }
-
-        return -1;  // Command failed
     }
+    return -1;
 }
 
 int space_error(char str[])
@@ -581,7 +617,7 @@ double handle_pipe(char* input, char* original_input, FILE* exec_times, char* dn
             dup2(pipe_fd[0], STDIN_FILENO); //redirecting stdin to the read end of the pipe
             close(pipe_fd[0]); //closing the read end of the pipe now that he was redirected
 
-            if (strcmp(right_command[0], "my_tee") == 0)
+            if (strcmp(right_command[0], "my_tee") == 0 || strcmp(right_command[0], "tee_my") == 0)
             {
                 if (right_arg_count < 2)
                 {
@@ -775,21 +811,8 @@ int handle_rlimit(char* command[], int arg_count, FILE* exec_times, int* cmd, do
         gettimeofday(&end, NULL);
         double runtime = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1000000.0;
 
-        // Update timing statistics
-        (*cmd)++;
-        *last_cmd_time = runtime;
-        *total_time += runtime;
-        *avg_time = *total_time / *cmd;
-
-        if (runtime > *max_time)
-            *max_time = runtime;
-
-        if (runtime < *min_time || *min_time == 0)
-            *min_time = runtime;
-
-        // Write to exec_times file
-        fprintf(exec_times, "%s : %.5f sec\n", command[0], runtime);
-        fflush(exec_times);
+        // Update timing statistics using the new function
+        update_timing_stats(runtime, cmd, total_time, last_cmd_time, avg_time, min_time, max_time, exec_times, command[0]);
 
         return 1;
     }
@@ -823,7 +846,12 @@ int handle_rlimit(char* command[], int arg_count, FILE* exec_times, int* cmd, do
             return 0;
         }
         else if (pid == 0) {
-            // Child process - set limits here
+            // Child process - set up signal handlers first
+            signal(SIGXCPU, handle_sigcpu);
+            signal(SIGXFSZ, handle_sigfsz);
+            signal(SIGSEGV, handle_sigmem);
+            signal(SIGUSR1, handle_signof);
+
             for (int i = 2; i < cmd_start; i++)
             {
                 char resource_name[MAX_SIZE];
@@ -833,7 +861,6 @@ int handle_rlimit(char* command[], int arg_count, FILE* exec_times, int* cmd, do
 
                 if (strchr(command[i], '=') != NULL)
                 {
-                    // Your existing limit setting code...
                     strncpy(resource_name, command[i], strchr(command[i], '=') - command[i]);
                     resource_name[strchr(command[i], '=') - command[i]] = '\0';
                     strcpy(value_str, strchr(command[i], '=') + 1);
@@ -898,21 +925,8 @@ int handle_rlimit(char* command[], int arg_count, FILE* exec_times, int* cmd, do
             double runtime = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1000000.0;
 
             if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
-                // Update timing statistics
-                (*cmd)++;
-                *last_cmd_time = runtime;
-                *total_time += runtime;
-                *avg_time = *total_time / *cmd;
-
-                if (runtime > *max_time)
-                    *max_time = runtime;
-
-                if (runtime < *min_time || *min_time == 0)
-                    *min_time = runtime;
-
-                // Write to exec_times file
-                fprintf(exec_times, "%s : %.5f sec\n", command[cmd_start], runtime);
-                fflush(exec_times);
+                // Update timing statistics using the new function
+                update_timing_stats(runtime, cmd, total_time, last_cmd_time, avg_time, min_time, max_time, exec_times, command[cmd_start]);
             }
         }
 
@@ -943,5 +957,83 @@ void handle_signof(int signo)
 {
     printf("Open files limit exceeded!\n");
     exit(1);
+}
+
+void handle_sigchild(int signo) {
+    pid_t pid;
+    int status;
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        if (WIFEXITED(status)) {
+            // Find the background process in our array
+            for (int i = 0; i < bg_count; i++) {
+                if (bg_processes[i].pid == pid) {
+                    // Calculate runtime
+                    struct timeval end;
+                    gettimeofday(&end, NULL);
+                    double runtime = (end.tv_sec - bg_processes[i].start_time.tv_sec) + 
+                                   (end.tv_usec - bg_processes[i].start_time.tv_usec) / 1000000.0;
+                    
+                    // Use the update_timing_stats function to update stats
+                    if (WEXITSTATUS(status) == 0) {
+                        
+                        
+                        // Update stats and write to exec_times file
+                        update_timing_stats(runtime, &cmd, &total_time, &last_cmd_time, 
+                                           &avg_time, &min_time, &max_time, 
+                                           global_exec_times, bg_processes[i].command);
+                        
+                        // Print the prompt with updated stats
+                        printf("\n#cmd:%d|#dangerous_cmd_blocked:%d|last_cmd_time:%.5f|avg_time:%.5f|min_time:%.5f|max_time:%.5f>>",
+                              cmd, dangerous_cmd_blocked, last_cmd_time, avg_time, min_time, max_time);
+                        fflush(stdout);
+                    } else {
+                        // Print failure message
+                        printf("\nBackground process [%d] failed: %s with status %d\n", 
+                              pid, bg_processes[i].command, WEXITSTATUS(status));
+                        
+                        // Write failure message to exec_times file
+                        if (global_exec_times != NULL) {
+                            fprintf(global_exec_times, "%s : failed with status %d (background)\n", 
+                                   bg_processes[i].command, WEXITSTATUS(status));
+                            fflush(global_exec_times);
+                        }
+                        
+                        // Print the prompt with unchanged stats
+                        printf("#cmd:%d|#dangerous_cmd_blocked:%d|last_cmd_time:%.5f|avg_time:%.5f|min_time:%.5f|max_time:%.5f>>",
+                              cmd, dangerous_cmd_blocked, last_cmd_time, avg_time, min_time, max_time);
+                        fflush(stdout);
+                    }
+                    
+                    // Remove the completed process from our array
+                    for (int j = i; j < bg_count - 1; j++) {
+                        bg_processes[j] = bg_processes[j + 1];
+                    }
+                    bg_count--;
+                    break;
+                }
+            }
+        }
+    }
+}
+
+// Function to handle time measurements and update statistics
+void update_timing_stats(double runtime, int* cmd, double* total_time, double* last_cmd_time, 
+                        double* avg_time, double* min_time, double* max_time, 
+                        FILE* exec_times, const char* command_name)
+{
+    (*cmd)++;
+    *last_cmd_time = runtime;
+    *total_time += runtime;
+    *avg_time = *total_time / *cmd;
+
+    if (runtime > *max_time)
+        *max_time = runtime;
+
+    if (runtime < *min_time || *min_time == 0)
+        *min_time = runtime;
+
+    // Write to exec_times file
+    fprintf(exec_times, "%s : %.5f sec\n", command_name, runtime);
+    fflush(exec_times);
 }
 

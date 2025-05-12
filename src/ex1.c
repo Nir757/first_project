@@ -1066,26 +1066,25 @@ int check_process_status(int status, pid_t pid, const char* cmd_name, FILE* exec
         int signal_num = WTERMSIG(status);
         
         if (is_background) {
-            printf("\nBackground process [%d] terminated by signal: ", pid);
-        } else {
-            printf("Error: Command '%s' terminated by signal: ", cmd_name);
-        }
+            printf("\nBackground process [%d] ", pid);
+        } 
         
         // Print signal name based on number
         switch (signal_num) {
-            case SIGSEGV: printf("SIGSEGV"); break;
-            case SIGINT: printf("SIGINT"); break;
-            case SIGTERM: printf("SIGTERM"); break;
-            case SIGKILL: printf("SIGKILL"); break;
-            case SIGABRT: printf("SIGABRT"); break;
-            case SIGFPE: printf("SIGFPE"); break;
-            case SIGILL: printf("SIGILL"); break;
-            case SIGPIPE: printf("SIGPIPE"); break;
-            case SIGQUIT: printf("SIGQUIT"); break;
-            case SIGTRAP: printf("SIGTRAP"); break;
-            case SIGXCPU: printf("SIGXCPU"); break;
-            case SIGXFSZ: printf("SIGXFSZ"); break;
-            default: printf("Signal %d", signal_num);
+            case SIGSEGV: printf("Memory allocation failed!"); break;
+            case SIGINT: printf("terminated by signal: SIGINT"); break;
+            case SIGTERM: printf("terminated by signal: SIGTERM"); break;
+            case SIGKILL: printf("terminated by signal: SIGKILL"); break;
+            case SIGABRT: printf("terminated by signal: SIGABRT"); break;
+            case SIGFPE: printf("terminated by signal: SIGFPE"); break;
+            case SIGILL: printf("terminated by signal: SIGILL"); break;
+            case SIGPIPE: printf("terminated by signal: SIGPIPE"); break;
+            case SIGQUIT: printf("terminated by signal: SIGQUIT"); break;
+            case SIGTRAP: printf("terminated by signal: SIGTRAP"); break;
+            case SIGXCPU: printf("CPU time limit exceeded!"); break;
+            case SIGXFSZ: printf("File size limit exceeded!"); break;
+            case SIGUSR1: printf("Too many open files!"); break;
+            default: printf("terminated by signal: %d", signal_num);
         }
         
         if (is_background) {

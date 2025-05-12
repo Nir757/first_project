@@ -20,3 +20,30 @@ ls : 0.00068 sec
 ./test_all_limits : 0.00036 sec
 ./test_all_limits : 0.00042 sec
 ./test_all_limits : 0.00042 sec
+ls : 0.00071 sec
+grep txt : 0.00071 sec
+ps aux : 0.00273 sec
+grep firefox : 0.00273 sec
+echo "Hello World" : 0.00125 sec
+my_tee output.txt : 0.00125 sec
+cat output.txt : 0.00051 sec
+cat output.txt : 0.00051 sec
+echo "Second line" : 0.00065 sec
+my_tee -a output.txt : 0.00065 sec
+cat output.txt : 0.00050 sec
+cat output.txt : 0.00050 sec
+echo "Hello" : 0.00068 sec
+my_tee file1.txt file2.txt : 0.00068 sec
+cat file1.txt : 0.00052 sec
+cat file1.txt : 0.00052 sec
+cat file2.txt : 0.00051 sec
+cat file2.txt : 0.00051 sec
+sleep : 12.37652 sec
+sleep : 12.37652 sec
+ls : 0.00079 sec
+ls : 0.00079 sec
+my_tee ./test1 ./test2 : 0.02350 sec
+my_tee ./test1 ./test2 : 0.02275 sec
+my_tee ./test1 ./test2 : 0.02368 sec
+my_tee ./test1 ./test2 : 0.02338 sec
+my_tee ./test1 ./test2 : 0.02464 sec

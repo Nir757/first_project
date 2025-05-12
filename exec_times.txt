@@ -56,3 +56,149 @@ cat error.log : 0.00057 sec
 rlimit : 0.00004 sec
 grep hi >2 error.log : 0.00085 sec
 rlimit : 0.00001 sec
+ls : 0.00079 sec
+grep txt : 0.00079 sec
+echo : 0.00063 sec
+echo : 0.00063 sec
+pwd : 0.00257 sec
+pwd : 0.00257 sec
+ls : 0.00073 sec
+ls : 0.00073 sec
+echo : 0.00055 sec
+echo : 0.00055 sec
+echo hi : 0.00051 sec
+echo hi : 0.00051 sec
+pwd : 0.00056 sec
+pwd : 0.00056 sec
+ls : 0.00072 sec
+ls : 0.00072 sec
+echo : 0.00055 sec
+echo : 0.00055 sec
+echo hi : 0.00055 sec
+echo hi : 0.00055 sec
+echo : 0.00054 sec
+echo : 0.00054 sec
+pwd : 0.00054 sec
+pwd : 0.00054 sec
+ls : 0.00072 sec
+ls : 0.00072 sec
+echo : 0.00056 sec
+echo : 0.00056 sec
+echo : 0.00055 sec
+echo : 0.00055 sec
+ls : 0.00078 sec
+grep txt : 0.00078 sec
+ps aux : 0.00325 sec
+grep firefox : 0.00325 sec
+ echo "Hello World" : 0.00080 sec
+my_tee output.txt : 0.00080 sec
+pwd : 0.00052 sec
+pwd : 0.00052 sec
+ls : 0.00070 sec
+ls : 0.00070 sec
+ls -l : 0.00099 sec
+ls -l : 0.00099 sec
+echo : 0.00055 sec
+echo : 0.00055 sec
+echo : 0.00053 sec
+echo : 0.00053 sec
+ echo "Hello World" : 0.00081 sec
+my_tee output.txt : 0.00081 sec
+pwd : 0.00055 sec
+pwd : 0.00055 sec
+ls : 0.00070 sec
+ls : 0.00070 sec
+ls -l -m : 0.00070 sec
+ls -l -m : 0.00070 sec
+echo : 0.00055 sec
+echo : 0.00055 sec
+echo "Hello World" : 0.00081 sec
+my_tee output.txt : 0.00081 sec
+ls : 0.00077 sec
+ls : 0.00077 sec
+pwd : 0.00106 sec
+pwd : 0.00106 sec
+ls : 0.00073 sec
+ls : 0.00073 sec
+ls : 0.00078 sec
+ls : 0.00078 sec
+rlimit : 0.00004 sec
+ls -l : 0.00097 sec
+ls -l : 0.00097 sec
+rlimit : 0.00002 sec
+rlimit show : 0.00003 sec
+ls : 0.00073 sec
+ls : 0.00073 sec
+ls : 0.00587 sec
+ls : 0.00587 sec
+ls : 0.00618 sec
+ls : 0.00618 sec
+ls : 0.00657 sec
+ls : 0.00657 sec
+ls : 0.00614 sec
+ls : 0.00614 sec
+ls : 0.00603 sec
+ls : 0.00603 sec
+ls : 0.00622 sec
+ls : 0.00622 sec
+ls : 0.00092 sec
+ls : 0.00092 sec
+pwd : 0.00063 sec
+pwd : 0.00063 sec
+echo : 0.00113 sec
+echo : 0.00113 sec
+ls : 0.00083 sec
+grep txt : 0.00083 sec
+ps aux : 0.00333 sec
+ps aux : 0.00338 sec
+ps aux : 0.00313 sec
+ps aux : 0.00325 sec
+grep firefox : 0.00325 sec
+ps aux : 0.00324 sec
+ps aux : 0.00324 sec
+ps aux : 0.00324 sec
+ps aux : 0.00311 sec
+ls : 0.00076 sec
+echo hi : 0.00086 sec
+my_tee output.txt : 0.00086 sec
+ls : 0.00082 sec
+grep txt : 0.00082 sec
+ls : 0.00079 sec
+grep txt : 0.00079 sec
+ls : 0.00081 sec
+grep txt : 0.00081 sec
+ls : 0.00077 sec
+grep txt : 0.00077 sec
+ls : 0.00079 sec
+grep txt : 0.00079 sec
+ls : 0.00078 sec
+grep txt : 0.00078 sec
+echo : 0.00110 sec
+echo : 0.00110 sec
+pwd : 0.00106 sec
+pwd : 0.00106 sec
+pwd : 0.00062 sec
+pwd : 0.00062 sec
+pwd : 0.00056 sec
+pwd : 0.00056 sec
+ls : 0.00072 sec
+ls : 0.00072 sec
+pwd : 0.00060 sec
+ls : 0.00072 sec
+echo : 0.00052 sec
+echo : 0.00054 sec
+ls -l  : 0.00115 sec
+echo : 0.00053 sec
+echo : 0.00055 sec
+cat output.txt : 0.00056 sec
+cat file1.txt : 0.00056 sec
+cat file2.txt : 0.00055 sec
+rlimit show : 0.00001 sec
+sleep 5 & : 0.00000 sec
+ls : 0.00072 sec
+sleep 5 & : 5.00069 sec
+sleep 5 & : 0.00000 sec
+pwd : 0.00057 sec
+ls : 0.00075 sec
+sleep 5 & : 5.00069 sec
+ps aux : 0.00322 sec

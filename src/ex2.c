@@ -29,10 +29,10 @@ FILE* open_file(char* filename, char* mode);
 int load_dangerous_commands(FILE* dangerous_commands, char* dng_cmds[]);
 int split_and_validate(char* input, char* original_input, char* command[], int rlimit_flag);
 void free_resources(char* command[], int arg_count, char* dng_cmds[], int dng_count);
-int check_dangerous_command(char* original_input, char* command[], char* dng_cmds[], int dng_count, char* print_err, int* dangerous_cmd_warning, int* dangerous_cmd_blocked, int arg_count);
-double execute_command(char* command[], char* original_input, FILE* exec_times);
-void update_timing_stats(double runtime, int* cmd, double* total_time, double* last_cmd_time, double* avg_time, double* min_time, double* max_time, FILE* exec_times, const char* command_name);
-double handle_pipe(char* input, char* original_input, FILE* exec_times, char* dng_cmds[], int dng_count, int pipe_index, int* dangerous_cmd_warning, int* dangerous_cmd_blocked);
+int check_dangerous_command(char* original_input, char* command[], int arg_count);
+double execute_command(char* command[], char* original_input);
+void update_timing_stats(double runtime, const char* command_name);
+double handle_pipe(char* input, char* original_input, int pipe_index);
 void handle_mytee(char * command[], int right_arg_count);
 int handle_rlimit(char* command[], int arg_count, FILE* exec_times, int* cmd, double* total_time, double* last_cmd_time, double* avg_time, double* min_time, double* max_time);
 int set_rlimit(int resource_code, int soft_limit, int hard_limit);
@@ -43,7 +43,7 @@ void handle_sigmem(int signo);
 void handle_signof(int signo);
 void handle_sigchild(int signo);
 int check_process_status(int status, pid_t pid, const char* cmd_name, FILE* exec_file, double runtime, int is_background);
-int handle_stderr_redirection(char* command[], int last_arg); 
+int handle_stderr_redirection(char* command[]); 
 
 struct bg_process 
 {
@@ -61,6 +61,8 @@ struct rlimit rl;
 int cmd = 0;
 int dangerous_cmd_blocked = 0;
 int dangerous_cmd_warning = 0;
+char* dng_cmds[MAX_DANG];  // Global array for dangerous commands
+int dng_count = 0;         // Global counter for dangerous commands
 
 double last_cmd_time = 0;
 double total_time = 0;
@@ -86,8 +88,7 @@ int main(int argc, char* argv[])
     global_exec_times = exec_times; // assigns a local pointer to the global pointer
 
     //load dangerous commands
-    char* dng_cmds[MAX_DANG];
-    int dng_count = load_dangerous_commands(dangerous_commands, dng_cmds);
+    dng_count = load_dangerous_commands(dangerous_commands, dng_cmds);
 
     fclose(dangerous_commands);
 
@@ -100,7 +101,7 @@ int main(int argc, char* argv[])
         char input[MAX_SIZE]; //input string
         char original_input[MAX_SIZE]; //to have the original after using splitting
         char* command[MAX_ARG + 1]; //array for arguments + NULL
-        char* rlimit_command[MAX_ARG + 5]; //array for rlimit commands + NULL
+        char* rlimit_command[MAX_ARG + 7]; //array for rlimit commands + NULL
 
         //getting input
         if (fgets(input, MAX_SIZE, stdin) == NULL) 
@@ -130,36 +131,6 @@ int main(int argc, char* argv[])
                         break;
                     }
                 }
-        }
-
-        //handle pipe
-        if (flag_pipe == 1)
-        {
-            double runtime = handle_pipe(input, original_input, exec_times, dng_cmds, dng_count, pipe_index, &dangerous_cmd_warning, &dangerous_cmd_blocked);
-
-            //not using the timing fucntion because it has special timing for pipe
-            if (runtime >= 0) // Both commands succeeded
-            {
-                cmd += 2;  // Both commands were valid and ran
-                total_time += runtime;
-                last_cmd_time = runtime / 2;  // Average time per command
-                avg_time = total_time / cmd;
-
-                double per_cmd_time = runtime / 2;  // Split runtime between the two commands
-                if (per_cmd_time > max_time)
-                    max_time = per_cmd_time;
-
-                if (per_cmd_time < min_time || min_time == 0)
-                {
-                    min_time = per_cmd_time;
-                }
-            }
-            else
-            {
-                printf("ERR_PIPE\n");
-            }
-
-            continue; // Skip the regular command processing
         }
         
         //sending input to validation and splitting
@@ -199,14 +170,51 @@ int main(int argc, char* argv[])
             continue; 
         }
 
+        //handle pipe
+        if (flag_pipe == 1)
+        {
+            double runtime = handle_pipe(input, original_input, pipe_index);
+
+            //not using the timing fucntion because it has special timing for pipe
+            if (runtime >= 0) // Both commands succeeded
+            {
+                cmd += 2;  // Both commands were valid and ran
+                total_time += runtime;
+                last_cmd_time = runtime / 2;  // Average time per command
+                avg_time = total_time / cmd;
+
+                double per_cmd_time = runtime / 2;  // Split runtime between the two commands
+                if (per_cmd_time > max_time)
+                    max_time = per_cmd_time;
+
+                if (per_cmd_time < min_time || min_time == 0)
+                {
+                    min_time = per_cmd_time;
+                }
+            }
+            else
+            {
+                printf("ERR_PIPE\n");
+            }
+
+            continue; // Skip the regular command processing
+        }
+
         if (strcmp(command[0], "done") == 0) //checking for done - end of terminal
         {
             printf("%d\n", dangerous_cmd_blocked);
 
+            // Free the dangerous commands array
+            for (int i = 0; i < dng_count; i++) {
+                free(dng_cmds[i]);
+            }
+
             // Only free the current command arguments which we know are valid - free resources caused double free error
-            for (int i = 0; i < arg_count; i++) {
+            for (int i = 0; i < arg_count; i++) 
+            {
                 if (command[i] != NULL) {
                     free(command[i]);
+                    command[i] = NULL; // Set to NULL after freeing
                 }
             }
 
@@ -214,28 +222,26 @@ int main(int argc, char* argv[])
             exit(0);
         }
 
-        char print_err[MAX_SIZE];
-        int danger_status = check_dangerous_command(original_input, command, dng_cmds, dng_count, print_err, &dangerous_cmd_warning, &dangerous_cmd_blocked, arg_count);
+        int danger_status = check_dangerous_command(original_input, command, arg_count);
 
         if (danger_status == 1) // Dangerous command detected
         {
-            for (int i = 0; i < arg_count; i++)
-            {
-                free(command[i]);
-            }
             continue;
         }
 
-        double runtime = execute_command(command, original_input, exec_times);
+        double runtime = execute_command(command, original_input);
 
         if (runtime >= 0) // Command executed successfully
         {
-            update_timing_stats(runtime, &cmd, &total_time, &last_cmd_time, &avg_time, &min_time, &max_time, exec_times, original_input);
+            update_timing_stats(runtime, original_input);
         }
 
         for (int i = 0; i < arg_count; i++) 
         {
-            free(command[i]);
+            if (command[i] != NULL) {
+                free(command[i]);
+                command[i] = NULL; // Set to NULL after freeing
+            }
         }
     }
 
@@ -313,7 +319,7 @@ int split_and_validate(char* input, char* original_input, char* command[], int r
     int max_arg = MAX_ARG;
 
     if (rlimit_flag == 1)
-        max_arg = MAX_ARG + 4; 
+        max_arg = MAX_ARG + 6; // 6 for rlimit commands + 7 for the new command
 
     int space_err = space_error(input);
     if (space_err == 1) //check for one or more spaces
@@ -355,10 +361,11 @@ void free_resources(char* command[], int arg_count, char* dng_cmds[], int dng_co
     }
 }
 
-int check_dangerous_command(char* original_input, char* command[], char* dng_cmds[], int dng_count, char* print_err, int* dangerous_cmd_warning, int* dangerous_cmd_blocked, int arg_count)
+int check_dangerous_command(char* original_input, char* command[], int arg_count)
 {
     int warning = 0;
     int dang_err = 0;
+    char print_err[MAX_SIZE];  
 
     for (int i = 0; i < dng_count; i++)
     {
@@ -382,20 +389,28 @@ int check_dangerous_command(char* original_input, char* command[], char* dng_cmd
     if (dang_err)
     {
         printf("ERR: Dangerous command detected (\"%s\"). Execution prevented.\n", print_err);
-        (*dangerous_cmd_blocked)++;
+        dangerous_cmd_blocked++;
+        // Clean up memory when dangerous command is detected
+        for (int i = 0; i < arg_count; i++)
+        {
+            if (command[i] != NULL) {
+                free(command[i]);
+                command[i] = NULL;  // Set to NULL to prevent double-free
+            }
+        }
         return 1;  // Dangerous command
     }
     if (warning)
     {
         printf("WARNING: Command similar to dangerous command (\"%s\"). Proceed with caution.\n", print_err);
-        (*dangerous_cmd_warning)++; // Increment the warning counter
+        dangerous_cmd_warning++; // Increment the warning counter
         return 2;  // Warning
     }
 
     return 0;  // No danger
 }
 
-double execute_command(char* command[], char* original_input, FILE* exec_times)
+double execute_command(char* command[], char* original_input)
 {
     pid_t pid;
     int background = 0;
@@ -428,7 +443,7 @@ double execute_command(char* command[], char* original_input, FILE* exec_times)
     else if (pid == 0)
     {
         // Check and handle stderr redirection if present
-        if (!handle_stderr_redirection(command, last_arg)) {
+        if (!handle_stderr_redirection(command)) {
             exit(1);
         }
 
@@ -448,7 +463,7 @@ double execute_command(char* command[], char* original_input, FILE* exec_times)
             gettimeofday(&end, NULL);
             double runtime = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1000000.0;
 
-            if (check_process_status(status, pid, original_input, exec_times, runtime, 0)) {
+            if (check_process_status(status, pid, original_input, global_exec_times, runtime, 0)) {
                 return runtime;
             }
             return -1;
@@ -481,7 +496,7 @@ void split_string(char* input, char* result[], int* count, int rlimit_flag) {
     *count = 0;
     int word_start = 0;
     int input_length = strlen(input);
-    int max_arg = rlimit_flag ? MAX_ARG + 4 : MAX_ARG;
+    int max_arg = rlimit_flag ? MAX_ARG + 6 : MAX_ARG;
     
     // Initialize all pointers to NULL
     for (int i = 0; i <= max_arg; i++) {
@@ -534,7 +549,7 @@ void split_string(char* input, char* result[], int* count, int rlimit_flag) {
     result[*count] = NULL; // NULL terminate for execvp
 }
 
-double handle_pipe(char* input, char* original_input, FILE* exec_times, char* dng_cmds[], int dng_count, int pipe_index, int* dangerous_cmd_warning, int* dangerous_cmd_blocked)
+double handle_pipe(char* input, char* original_input, int pipe_index)
 {
     char input_left[MAX_SIZE];
     char input_right[MAX_SIZE];
@@ -564,8 +579,7 @@ double handle_pipe(char* input, char* original_input, FILE* exec_times, char* dn
     }
 
     // Check if either command is dangerous
-    char print_err[MAX_SIZE];
-    int danger_status_left = check_dangerous_command(input_left, left_command, dng_cmds, dng_count, print_err, dangerous_cmd_warning, dangerous_cmd_blocked, left_arg_count);
+    int danger_status_left = check_dangerous_command(input_left, left_command, left_arg_count);
 
     if (danger_status_left == 1) // Dangerous left command detected
     {
@@ -574,7 +588,7 @@ double handle_pipe(char* input, char* original_input, FILE* exec_times, char* dn
         return -1;
     }
 
-    int danger_status_right = check_dangerous_command(input_right, right_command, dng_cmds, dng_count, print_err, dangerous_cmd_warning, dangerous_cmd_blocked, right_arg_count);
+    int danger_status_right = check_dangerous_command(input_right, right_command, right_arg_count);
 
     if (danger_status_right == 1) // Dangerous right command detected
     {
@@ -634,7 +648,7 @@ double handle_pipe(char* input, char* original_input, FILE* exec_times, char* dn
                 exit(0);
             }
 
-            if (!handle_stderr_redirection(right_command, right_arg_count)) {
+            if (!handle_stderr_redirection(right_command)) {
                 exit(1);
             }
 
@@ -656,16 +670,16 @@ double handle_pipe(char* input, char* original_input, FILE* exec_times, char* dn
             runtime = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1000000.0;
 
             // Check status of left command
-            int left_success = check_process_status(status1, pid_left, input_left, exec_times, runtime, 0);
+            //int left_success = check_process_status(status1, pid_left, input_left, global_exec_times, runtime, 0);
             
             // Check status of right command
-            int right_success = check_process_status(status2, pid_right, input_right, exec_times, runtime, 0);
+            int right_success = check_process_status(status2, pid_right, input_right, global_exec_times, runtime, 0);
 
             free_resources(left_command, left_arg_count, NULL, 0);
             free_resources(right_command, right_arg_count, NULL, 0);
 
             // Return the runtime if both commands succeeded
-            if (left_success && right_success) {
+            if (right_success) {
                 return runtime;
             }
             return -1;  // Command failed
@@ -814,7 +828,7 @@ int handle_rlimit(char* command[], int arg_count, FILE* exec_times, int* cmd, do
         double runtime = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1000000.0;
 
         // Update timing statistics using the new function
-        update_timing_stats(runtime, cmd, total_time, last_cmd_time, avg_time, min_time, max_time, exec_times, command[0]);
+        update_timing_stats(runtime, "rlimit show");
 
         return 1;
     }
@@ -913,6 +927,11 @@ int handle_rlimit(char* command[], int arg_count, FILE* exec_times, int* cmd, do
             }
             new_command[new_index] = NULL;
 
+            check_dangerous_command(new_command[0], new_command, arg_count);
+            if (!handle_stderr_redirection(new_command)) {
+                exit(1);
+            }
+
             execvp(new_command[0], new_command);
             perror("execvp");
             exit(1);
@@ -928,7 +947,7 @@ int handle_rlimit(char* command[], int arg_count, FILE* exec_times, int* cmd, do
 
             if (check_process_status(status, pid, command[cmd_start], exec_times, runtime, 0)) {
                 // Update timing statistics using the new function
-                update_timing_stats(runtime, cmd, total_time, last_cmd_time, avg_time, min_time, max_time, exec_times, command[cmd_start]);
+                update_timing_stats(runtime, command[cmd_start]);
             }
         }
 
@@ -979,13 +998,11 @@ void handle_sigchild(int signo) {
                 
                 if (success) {
                     // Success case - update stats
-                    update_timing_stats(runtime, &cmd, &total_time, &last_cmd_time, 
-                                       &avg_time, &min_time, &max_time, 
-                                       global_exec_times, bg_processes[i].command);
+                    update_timing_stats(runtime, bg_processes[i].command);
                 }
                 
                 // Print the prompt with updated or unchanged stats
-                printf("#cmd:%d|#dangerous_cmd_blocked:%d|last_cmd_time:%.5f|avg_time:%.5f|min_time:%.5f|max_time:%.5f>>",
+                printf("\n#cmd:%d|#dangerous_cmd_blocked:%d|last_cmd_time:%.5f|avg_time:%.5f|min_time:%.5f|max_time:%.5f>>",
                       cmd, dangerous_cmd_blocked, last_cmd_time, avg_time, min_time, max_time);
                 fflush(stdout);
                 
@@ -1001,23 +1018,22 @@ void handle_sigchild(int signo) {
 }
 
 // Function to handle time measurements and update statistics
-void update_timing_stats(double runtime, int* cmd, double* total_time, double* last_cmd_time, 
-        double* avg_time, double* min_time, double* max_time, FILE* exec_times, const char* command_name)
+void update_timing_stats(double runtime, const char* command_name)
 {
-    (*cmd)++;
-    *last_cmd_time = runtime;
-    *total_time += runtime;
-    *avg_time = *total_time / *cmd;
+    cmd++;
+    last_cmd_time = runtime;
+    total_time += runtime;
+    avg_time = total_time / cmd;
 
-    if (runtime > *max_time)
-        *max_time = runtime;
+    if (runtime > max_time)
+        max_time = runtime;
 
-    if (runtime < *min_time || *min_time == 0)
-        *min_time = runtime;
+    if (runtime < min_time || min_time == 0)
+        min_time = runtime;
 
     // Write to exec_times file
-    fprintf(exec_times, "%s : %.5f sec\n", command_name, runtime);
-    fflush(exec_times);
+    fprintf(global_exec_times, "%s : %.5f sec\n", command_name, runtime);
+    fflush(global_exec_times);
 }
 
 int check_process_status(int status, pid_t pid, const char* cmd_name, FILE* exec_file, double runtime, int is_background)
@@ -1025,14 +1041,6 @@ int check_process_status(int status, pid_t pid, const char* cmd_name, FILE* exec
     if (WIFEXITED(status)) {
         int exit_code = WEXITSTATUS(status);
         if (exit_code == 0) {
-            if (exec_file != NULL) {
-                if (is_background) {
-                    fprintf(exec_file, "%s : %.5f sec (background)\n", cmd_name, runtime);
-                } else {
-                    fprintf(exec_file, "%s : %.5f sec\n", cmd_name, runtime);
-                }
-                fflush(exec_file);
-            }
             return 1; // Success
         } else {
             if (is_background) {
@@ -1086,7 +1094,7 @@ int check_process_status(int status, pid_t pid, const char* cmd_name, FILE* exec
     return 0; // Failure
 }
 
-int handle_stderr_redirection(char* command[], int last_arg) {
+int handle_stderr_redirection(char* command[]) {
     char* stderr_file = NULL;
     
     // Check for stderr redirection
@@ -1096,7 +1104,12 @@ int handle_stderr_redirection(char* command[], int last_arg) {
                 stderr_file = command[i+1];
                 // Remove the 2> and filename from command
                 for (int j = i; command[j] != NULL; j++) {
-                    command[j] = (j+2 < last_arg) ? command[j+2] : NULL;
+                    if (command[j+2] != NULL) {
+                        command[j] = command[j+2];
+                    } else {
+                        command[j] = NULL;
+                        break;
+                    }
                 }
                 
                 // Found 2>, now handle the redirection

@@ -47,3 +47,12 @@ my_tee ./test1 ./test2 : 0.02275 sec
 my_tee ./test1 ./test2 : 0.02368 sec
 my_tee ./test1 ./test2 : 0.02338 sec
 my_tee ./test1 ./test2 : 0.02464 sec
+ls : 0.00076 sec
+ls : 0.00076 sec
+cat error.log : 0.00054 sec
+cat error.log : 0.00054 sec
+cat error.log : 0.00057 sec
+cat error.log : 0.00057 sec
+rlimit : 0.00004 sec
+grep hi >2 error.log : 0.00085 sec
+rlimit : 0.00001 sec

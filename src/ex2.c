@@ -10,6 +10,7 @@
 #include <errno.h> // for errno - memory and files errors
 #include <sys/types.h> // for pid_t
 #include <fcntl.h> // for open function
+#include <pthread.h> // for pthread_create
 
 #define MAX_SIZE 1025
 #define MAX_ARG 7 // command + 6 arguments
@@ -44,12 +45,21 @@ void handle_signof(int signo);
 void handle_sigchild(int signo);
 int check_process_status(int status, pid_t pid, const char* cmd_name, FILE* exec_file, double runtime, int is_background);
 int handle_stderr_redirection(char* command[]); 
+void handle_mcalc(char* command[], int arg_count);
+int mcalc_format_check(char* command[], int arg_count);
+
 
 struct bg_process 
 {
     pid_t pid;
     struct timeval start_time;
     char command[MAX_SIZE];
+};
+
+struct matrix
+{
+    int size;
+    int* data;
 };
 
 struct bg_process bg_processes[MAX_BG_PROCESSES];
@@ -106,8 +116,8 @@ int main(int argc, char* argv[])
         //getting input
         if (fgets(input, MAX_SIZE, stdin) == NULL) 
         {
-            perror("fgets");
-            exit(1);
+            free_resources(command,MAX_ARG, dng_cmds, dng_count);
+            break;
         }
 
         input[strcspn(input, "\n")] = 0; //remove newline character after using fgets and avoiding execvp error
@@ -132,6 +142,32 @@ int main(int argc, char* argv[])
                     }
                 }
         }
+
+         //handle pipe
+        if (flag_pipe == 1)
+        {
+            double runtime = handle_pipe(input, original_input, pipe_index);
+
+            //not using the timing fucntion because it has special timing for pipe
+            if (runtime >= 0) // Both commands succeeded
+            {
+                cmd += 2;  // Both commands were valid and ran
+                total_time += runtime;
+                last_cmd_time = runtime / 2;  // Average time per command
+                avg_time = total_time / cmd;
+
+                double per_cmd_time = runtime / 2;  // Split runtime between the two commands
+                if (per_cmd_time > max_time)
+                    max_time = per_cmd_time;
+
+                if (per_cmd_time < min_time || min_time == 0)
+                {
+                    min_time = per_cmd_time;
+                }
+            }
+
+            continue; // Skip the regular command processing
+        }
         
         //sending input to validation and splitting
         int arg_count;
@@ -144,7 +180,9 @@ int main(int argc, char* argv[])
             arg_count = split_and_validate(input, original_input, command,0);
         }
 
-        if (arg_count == -1) // Error in parsing input
+
+        // Error in parsing input
+        if (arg_count == -1) 
         {
             for (int i = 0; i < MAX_ARG + 1; i++) {
                 command[i] = NULL;
@@ -170,53 +208,20 @@ int main(int argc, char* argv[])
             continue; 
         }
 
-        //handle pipe
-        if (flag_pipe == 1)
+
+        if (strcmp(command[0], "mcalc") == 0)
         {
-            double runtime = handle_pipe(input, original_input, pipe_index);
-
-            //not using the timing fucntion because it has special timing for pipe
-            if (runtime >= 0) // Both commands succeeded
-            {
-                cmd += 2;  // Both commands were valid and ran
-                total_time += runtime;
-                last_cmd_time = runtime / 2;  // Average time per command
-                avg_time = total_time / cmd;
-
-                double per_cmd_time = runtime / 2;  // Split runtime between the two commands
-                if (per_cmd_time > max_time)
-                    max_time = per_cmd_time;
-
-                if (per_cmd_time < min_time || min_time == 0)
-                {
-                    min_time = per_cmd_time;
-                }
-            }
-            else
-            {
-                printf("ERR_PIPE\n");
-            }
-
-            continue; // Skip the regular command processing
+            handle_mcalc(command, arg_count);
+            continue;
         }
+
 
         if (strcmp(command[0], "done") == 0) //checking for done - end of terminal
         {
             printf("%d\n", dangerous_cmd_blocked);
 
-            // Free the dangerous commands array
-            for (int i = 0; i < dng_count; i++) {
-                free(dng_cmds[i]);
-            }
-
-            // Only free the current command arguments which we know are valid - free resources caused double free error
-            for (int i = 0; i < arg_count; i++) 
-            {
-                if (command[i] != NULL) {
-                    free(command[i]);
-                    command[i] = NULL; // Set to NULL after freeing
-                }
-            }
+            // Free all resources
+            free_resources(command, arg_count, dng_cmds, dng_count);
 
             fclose(exec_times);
             exit(0);
@@ -245,6 +250,7 @@ int main(int argc, char* argv[])
         }
     }
 
+    fclose(exec_times);
     return 0;
 }
 
@@ -338,11 +344,9 @@ int split_and_validate(char* input, char* original_input, char* command[], int r
     }
 
     if (error) {
-        // Clean up any allocated memory
-        for (int i = 0; command[i] != NULL; i++) {
-            free(command[i]);
-            command[i] = NULL;
-        }
+       
+        int rlimit_free = rlimit_flag ? (MAX_ARG + 6) : MAX_ARG;
+        free_resources(command, rlimit_free, NULL, 0);
         return -1;
     }
 
@@ -351,13 +355,24 @@ int split_and_validate(char* input, char* original_input, char* command[], int r
 
 void free_resources(char* command[], int arg_count, char* dng_cmds[], int dng_count)
 {
-    for (int i = 0; i < arg_count; i++)
-    {
-        free(command[i]);
+    // Free command array if it exists
+    if (command != NULL) {
+        
+        int max_to_free = (arg_count < 0) ? MAX_ARG : arg_count;
+        for (int i = 0; i < max_to_free && command[i] != NULL; i++)
+        {
+            free(command[i]);
+            command[i] = NULL;
+        }
     }
-    for (int i = 0; i < dng_count; i++)
-    {
-        free(dng_cmds[i]);
+    
+    // Free dangerous commands array if it exists
+    if (dng_cmds != NULL && dng_count > 0) {
+        for (int i = 0; i < dng_count && dng_cmds[i] != NULL; i++)
+        {
+            free(dng_cmds[i]);
+            dng_cmds[i] = NULL;
+        }
     }
 }
 
@@ -390,14 +405,7 @@ int check_dangerous_command(char* original_input, char* command[], int arg_count
     {
         printf("ERR: Dangerous command detected (\"%s\"). Execution prevented.\n", print_err);
         dangerous_cmd_blocked++;
-        // Clean up memory when dangerous command is detected
-        for (int i = 0; i < arg_count; i++)
-        {
-            if (command[i] != NULL) {
-                free(command[i]);
-                command[i] = NULL;  // Set to NULL to prevent double-free
-            }
-        }
+        free_resources(command, arg_count, NULL, 0);
         return 1;  // Dangerous command
     }
     if (warning)
@@ -428,7 +436,8 @@ double execute_command(char* command[], char* original_input)
             // Remove & from the end of the argument
             last_arg_str[len-1] = '\0';
             // If the argument is now empty after removing &, remove it entirely
-            if (len == 1) {
+            if (len == 1) { // This means the argument was solely "&"
+                free(command[last_arg-1]); // Free the malloc'd "&" string
                 command[last_arg-1] = NULL;
             }
         }
@@ -476,6 +485,7 @@ double execute_command(char* command[], char* original_input)
                 bg_processes[bg_count].command[MAX_SIZE - 1] = '\0';
                 bg_count++;
             }
+
             return 0; // Return 0 to indicate background process started
         }
     }
@@ -565,16 +575,26 @@ double handle_pipe(char* input, char* original_input, int pipe_index)
     char* left_command[MAX_ARG + 1];
     char* right_command[MAX_ARG + 1];
 
+    // Initialize command arrays to NULL
+    for (int i = 0; i <= MAX_ARG; i++) {
+        left_command[i] = NULL;
+        right_command[i] = NULL;
+    }
+
     int left_arg_count = split_and_validate(input_left, original_input, left_command, 0);
     int right_arg_count = split_and_validate(input_right, original_input, right_command, 0);
 
     if (left_arg_count == -1 || right_arg_count == -1)
     {
+        free_resources(left_command, left_arg_count, NULL, 0);
+        free_resources(right_command, right_arg_count, NULL, 0);
         return -1;
     }
 
     if (left_arg_count == 0 || right_arg_count == 0)
     {
+        free_resources(left_command, left_arg_count, NULL, 0);
+        free_resources(right_command, right_arg_count, NULL, 0);
         return -1;
     }
 
@@ -601,6 +621,8 @@ double handle_pipe(char* input, char* original_input, int pipe_index)
     if (pipe(pipe_fd) == -1)
     {
         perror("pipe");
+        free_resources(left_command, left_arg_count, NULL, 0);
+        free_resources(right_command, right_arg_count, NULL, 0);
         exit(1);
     }
 
@@ -611,6 +633,8 @@ double handle_pipe(char* input, char* original_input, int pipe_index)
     if (pid_left < 0)
     {
         perror("fork");
+        free_resources(left_command, left_arg_count, NULL, 0);
+        free_resources(right_command, right_arg_count, NULL, 0);
         exit(1);
     }
     else if (pid_left == 0)
@@ -629,6 +653,8 @@ double handle_pipe(char* input, char* original_input, int pipe_index)
         if (pid_right < 0)
         {
             perror("fork");
+            free_resources(left_command, left_arg_count, NULL, 0);
+            free_resources(right_command, right_arg_count, NULL, 0);
             exit(1);
         }
         else if (pid_right == 0)
@@ -669,9 +695,6 @@ double handle_pipe(char* input, char* original_input, int pipe_index)
             gettimeofday(&end, NULL);
             runtime = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1000000.0;
 
-            // Check status of left command
-            //int left_success = check_process_status(status1, pid_left, input_left, global_exec_times, runtime, 0);
-            
             // Check status of right command
             int right_success = check_process_status(status2, pid_right, input_right, global_exec_times, runtime, 0);
 
@@ -830,6 +853,11 @@ int handle_rlimit(char* command[], int arg_count, FILE* exec_times, int* cmd, do
         // Update timing statistics using the new function
         update_timing_stats(runtime, "rlimit show");
 
+        for (int i = 0; command[i] != NULL; i++) {
+        free(command[i]);
+        command[i] = NULL;
+    }
+
         return 1;
     }
     
@@ -921,6 +949,11 @@ int handle_rlimit(char* command[], int arg_count, FILE* exec_times, int* cmd, do
             char* new_command[MAX_ARG + 1];
             int new_index = 0;
             
+            // Initialize new_command array to NULL
+            for (int i = 0; i <= MAX_ARG; i++) {
+                new_command[i] = NULL;
+            }
+            
             // Copy the command and its arguments
             for (int i = cmd_start; i < arg_count; i++) {
                 new_command[new_index++] = command[i];
@@ -948,6 +981,12 @@ int handle_rlimit(char* command[], int arg_count, FILE* exec_times, int* cmd, do
             if (check_process_status(status, pid, command[cmd_start], exec_times, runtime, 0)) {
                 // Update timing statistics using the new function
                 update_timing_stats(runtime, command[cmd_start]);
+            }
+
+            for (int i = 0; i < arg_count; i++)
+            {
+            free(command[i]);
+            command[i] = NULL;
             }
         }
 
@@ -1129,4 +1168,114 @@ int handle_stderr_redirection(char* command[]) {
         }
     }
     return 1; // No redirection found, return success
+}
+
+int mcalc_format_check(char* command[], int arg_count)
+{
+    if (arg_count < 4) // must have mcalc, at least two matrices, and operation
+    {
+        return 1;
+    }
+
+    // check if operation is valid
+    if (strcmp(command[arg_count-1], "\"ADD\"") != 0 && strcmp(command[arg_count-1], "\"SUB\"") != 0)
+    {
+        return 1;
+    }
+
+     // Variables to track dimensions of the first matrix for comparison
+    int first_rows = 0;
+    int first_cols = 0;
+
+    // Check each matrix
+    for (int i = 1; i < arg_count - 1; i++)
+    {
+        char* arg = command[i];
+        int arg_len = strlen(arg);
+        
+        // check if matrix is in quotes and ()
+        if (arg_len < 7 || arg[0] != '"' || arg[1] != '(' || 
+            arg[arg_len-2] != ')' || arg[arg_len-1] != '"')
+        {
+            return 1;
+        }
+
+        // Create a temporary copy without the outer quotes and parentheses
+        char arg_copy[MAX_SIZE];
+        strncpy(arg_copy, arg + 2, arg_len - 4);  // Skip first two chars and last two chars
+        arg_copy[arg_len - 4] = '\0';
+        
+        // Find colon separator between dimensions and data
+        char* colon = strchr(arg_copy, ':');
+        if (!colon) 
+        {
+            return 1;
+        }
+        
+        // Parse dimensions
+        *colon = '\0'; // Temporarily terminate string at colon for dimension parsing
+        
+        char* dims = arg_copy;
+        char* comma = strchr(dims, ',');
+        if (!comma) {
+            return 1;
+        }
+        
+        // Get rows and columns
+        *comma = '\0';
+        int rows = atoi(dims);
+        int cols = atoi(comma + 1);
+        if (rows <= 0 || cols <= 0) {
+            return 1;
+        }
+
+         // Save dimensions of first matrix to compare with others
+        if (i == 1) {
+            first_rows = rows;
+            first_cols = cols;
+        }
+        // Check that current matrix has same dimensions as first matrix
+        else if (rows != first_rows || cols != first_cols) {
+            return 1;  // Matrix dimensions don't match
+        }
+        
+        // Restore the colon 
+        *colon = ':';
+        
+        // Count elements in data
+        int count = 0;
+        char* data = colon + 1;
+        char* p = data;
+        int in_number = 0;
+        
+        while (*p) {
+            if (isdigit(*p) || *p == '-') {
+                if (!in_number) {
+                    count++;
+                    in_number = 1;
+                }
+            } else {
+                in_number = 0;
+            }
+            p++;
+        }
+        
+        // Verify element count matches dimensions
+        if (count != rows * cols) {
+            return 1;
+        }
+    }
+    
+    return 0;
+}
+
+void handle_mcalc(char* command[], int arg_count)
+{
+    int error = mcalc_format_check(command, arg_count);
+    if (error)
+    {
+        printf("ERR_MAT_INPUT\n");
+        return;
+    }
+    
 }

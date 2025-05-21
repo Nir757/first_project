@@ -202,3 +202,6 @@ pwd : 0.00057 sec
 ls : 0.00075 sec
 sleep 5 & : 5.00069 sec
 ps aux : 0.00322 sec
+pwd : 0.00109 sec
+ls : 0.00077 sec
+echo : 0.00113 sec

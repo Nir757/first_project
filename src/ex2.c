@@ -56,8 +56,9 @@ void handle_sigchild(int signo);
 int check_process_status(int status, pid_t pid, const char* cmd_name, FILE* exec_file, double runtime, int is_background);
 int handle_stderr_redirection(char* command[]); 
 void handle_mcalc(char* command[], int arg_count);
-int mcalc_format_check(char* command[], int arg_count, struct matrix* matrices[], int* matrix_count);
-
+int mcalc_format_check(char* command[], int arg_count, struct matrix* matrices[], int* matrix_count,int* operation);
+void* add_matrices(void* matrices);
+void* sub_matrices(void* matrices);
 
 struct bg_process 
 {
@@ -1174,7 +1175,7 @@ int handle_stderr_redirection(char* command[]) {
     return 1; // No redirection found, return success
 }
 
-int mcalc_format_check(char* command[], int arg_count, struct matrix* matrices[], int* matrix_count)
+int mcalc_format_check(char* command[], int arg_count, struct matrix* matrices[], int* matrix_count,int* operation)
 {
     if (arg_count < 4) // must have mcalc, at least two matrices, and operation
     {
@@ -1185,6 +1186,16 @@ int mcalc_format_check(char* command[], int arg_count, struct matrix* matrices[]
     if (strcmp(command[arg_count-1], "\"ADD\"") != 0 && strcmp(command[arg_count-1], "\"SUB\"") != 0)
     {
         return 1;
+    }
+    
+    // Set operation value: 1 for ADD, 2 for SUB
+    if (strcmp(command[arg_count-1], "\"ADD\"") == 0) 
+    {
+        *operation = 1;
+    } 
+    else 
+    {
+        *operation = 2;
     }
 
      // Variables to track dimensions of the first matrix for comparison
@@ -1234,8 +1245,6 @@ int mcalc_format_check(char* command[], int arg_count, struct matrix* matrices[]
         if (rows <= 0 || cols <= 0) {
             return 1;
         }
-
-    
 
          // Save dimensions of first matrix to compare with others
         if (i == 1) {
@@ -1287,7 +1296,7 @@ int mcalc_format_check(char* command[], int arg_count, struct matrix* matrices[]
 
         // insert data into matrix
         int data_index = 0;
-        char *data_str = colon + 1;        // points to the first digit after “:”
+        char *data_str = colon + 1;        // points to the first digit after ":"
         char *token = strtok(data_str, ",)"); 
         while (token != NULL) {
             if (data_index < rows * cols) {
@@ -1315,26 +1324,54 @@ void handle_mcalc(char* command[], int arg_count)
 {
     // Create matrices from command arguments
     int matrix_count = 0;
+    int operation = 0;  // 1 for ADD, 2 for SUB
     struct matrix* matrices[MAX_MATRICES];
     
-    int error = mcalc_format_check(command, arg_count, matrices, &matrix_count);
+    int error = mcalc_format_check(command, arg_count, matrices, &matrix_count, &operation);
     if (error)
     {
         printf("ERR_MAT_INPUT\n");
         return;
     }
 
-    
-
     for (int i = 0; i < matrix_count; i++)
-    {
-        printf("Matrix %d:\n", i + 1);
-        printf("Rows: %d, Columns: %d\n", matrices[i]->rows, matrices[i]->cols);
-        printf("Data: ");
-        for (int j = 0; j < matrices[i]->size; j++) {
-            printf("%d ", matrices[i]->data[j]);
-        }
-        printf("\n");
-    }
+     {
+
+         printf("Matrix %d:\n", i + 1);
+         printf("Rows: %d, Columns: %d\n", matrices[i]->rows, matrices[i]->cols);
+         printf("Data: ");
+         for (int j = 0; j < matrices[i]->size; j++) {
+             printf("%d ", matrices[i]->data[j]);
+         }
+         printf("\n");
+     }
+
+    // while (matrix_count > 1)
+    // {
+    //     int size = matrix_count / 2;
+    //     pthread_t threads[size];
+
+    //     for (int i = 0; i < size; i++)
+    //     {
+    //         if (operation == 1)
+    //         {
+    //             pthread_create(&threads[i],NULL,add_matrices,(void*)matrices);
+    //         }
+    //         else
+    //         {
+    //             pthread_create(&threads[i],NULL,sub_matrices,(void*)matrices);
+    //         }
+    //     }
+    // }
 
 }
+
+// void* add_matrices(void* matrices)
+// {
+    
+// }
+
+// void* sub_matrices(void* matrices)
+// {
+        
+// }

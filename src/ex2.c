@@ -23,6 +23,16 @@
 
 #define MAX_BG_PROCESSES 100
 
+#define MAX_MATRICES 5 // max arg is 7 so 5 matrices
+
+struct matrix
+{
+    int rows;
+    int cols;
+    int size;
+    int* data;
+};
+
 int space_error(char str[]);
 void split_string(char* input, char* result[], int* count, int rlimit_flag);
 void input_arg_check(int argc);
@@ -46,7 +56,7 @@ void handle_sigchild(int signo);
 int check_process_status(int status, pid_t pid, const char* cmd_name, FILE* exec_file, double runtime, int is_background);
 int handle_stderr_redirection(char* command[]); 
 void handle_mcalc(char* command[], int arg_count);
-int mcalc_format_check(char* command[], int arg_count);
+int mcalc_format_check(char* command[], int arg_count, struct matrix* matrices[], int* matrix_count);
 
 
 struct bg_process 
@@ -54,12 +64,6 @@ struct bg_process
     pid_t pid;
     struct timeval start_time;
     char command[MAX_SIZE];
-};
-
-struct matrix
-{
-    int size;
-    int* data;
 };
 
 struct bg_process bg_processes[MAX_BG_PROCESSES];
@@ -1170,7 +1174,7 @@ int handle_stderr_redirection(char* command[]) {
     return 1; // No redirection found, return success
 }
 
-int mcalc_format_check(char* command[], int arg_count)
+int mcalc_format_check(char* command[], int arg_count, struct matrix* matrices[], int* matrix_count)
 {
     if (arg_count < 4) // must have mcalc, at least two matrices, and operation
     {
@@ -1186,6 +1190,8 @@ int mcalc_format_check(char* command[], int arg_count)
      // Variables to track dimensions of the first matrix for comparison
     int first_rows = 0;
     int first_cols = 0;
+
+    *matrix_count = 0;
 
     // Check each matrix
     for (int i = 1; i < arg_count - 1; i++)
@@ -1229,6 +1235,8 @@ int mcalc_format_check(char* command[], int arg_count)
             return 1;
         }
 
+    
+
          // Save dimensions of first matrix to compare with others
         if (i == 1) {
             first_rows = rows;
@@ -1241,15 +1249,32 @@ int mcalc_format_check(char* command[], int arg_count)
         
         // Restore the colon 
         *colon = ':';
+
+        // Allocate memory for the new matrix
+        matrices[*matrix_count] = (struct matrix*)malloc(sizeof(struct matrix));
+        if (matrices[*matrix_count] == NULL) {
+            return 1;  // Memory allocation failed
+        }
         
-        // Count elements in data
+        matrices[*matrix_count]->rows = rows;
+        matrices[*matrix_count]->cols = cols;
+        matrices[*matrix_count]->size = rows * cols;
+        matrices[*matrix_count]->data = (int*)malloc(rows * cols * sizeof(int));
+        
+        if (matrices[*matrix_count]->data == NULL) {
+            free(matrices[*matrix_count]);
+            return 1;  // Memory allocation failed
+        }
+        
+        // Count elements in data and check if it is a number
         int count = 0;
         char* data = colon + 1;
         char* p = data;
         int in_number = 0;
         
         while (*p) {
-            if (isdigit(*p) || *p == '-') {
+            if (isdigit(*p) || *p == '-')//check for number and negative
+            {
                 if (!in_number) {
                     count++;
                     in_number = 1;
@@ -1259,19 +1284,40 @@ int mcalc_format_check(char* command[], int arg_count)
             }
             p++;
         }
+
+        // insert data into matrix
+        int data_index = 0;
+        char *data_str = colon + 1;        // points to the first digit after “:”
+        char *token = strtok(data_str, ",)"); 
+        while (token != NULL) {
+            if (data_index < rows * cols) {
+                matrices[*matrix_count]->data[data_index++] = atoi(token);
+            }
+            token = strtok(NULL, ",)");
+        }
         
         // Verify element count matches dimensions
-        if (count != rows * cols) {
+        if (count != rows * cols)
+        {
+            free(matrices[*matrix_count]->data);
+            free(matrices[*matrix_count]);
             return 1;
         }
+
+        (*matrix_count)++;
     }
+
     
     return 0;
 }
 
 void handle_mcalc(char* command[], int arg_count)
 {
-    int error = mcalc_format_check(command, arg_count);
+    // Create matrices from command arguments
+    int matrix_count = 0;
+    struct matrix* matrices[MAX_MATRICES];
+    
+    int error = mcalc_format_check(command, arg_count, matrices, &matrix_count);
     if (error)
     {
         printf("ERR_MAT_INPUT\n");
@@ -1280,6 +1326,15 @@ void handle_mcalc(char* command[], int arg_count)
 
     
 
+    for (int i = 0; i < matrix_count; i++)
+    {
+        printf("Matrix %d:\n", i + 1);
+        printf("Rows: %d, Columns: %d\n", matrices[i]->rows, matrices[i]->cols);
+        printf("Data: ");
+        for (int j = 0; j < matrices[i]->size; j++) {
+            printf("%d ", matrices[i]->data[j]);
+        }
+        printf("\n");
+    }
 
-    
 }

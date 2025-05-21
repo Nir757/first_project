@@ -1277,5 +1277,9 @@ void handle_mcalc(char* command[], int arg_count)
         printf("ERR_MAT_INPUT\n");
         return;
     }
+
+    
+
+
     
 }

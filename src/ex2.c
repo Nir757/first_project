@@ -1383,6 +1383,9 @@ void* matrices_calculation(void* arg)
 
 void handle_mcalc(char* command[], int arg_count)
 {
+    struct timeval start, end;
+    gettimeofday(&start, NULL);
+
     // Create matrices from command arguments
     int matrix_count = 0;
     int operation = 0;  // 1 for ADD, 2 for SUB
@@ -1452,6 +1455,11 @@ void handle_mcalc(char* command[], int arg_count)
 
     //free matrices
     free_matrices(matrices, matrix_count);
+
+    // Calculate and update timing statistics
+    gettimeofday(&end, NULL);
+    double runtime = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1000000.0;
+    update_timing_stats(runtime, "mcalc");
 }
 
 

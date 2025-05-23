@@ -57,8 +57,14 @@ int check_process_status(int status, pid_t pid, const char* cmd_name, FILE* exec
 int handle_stderr_redirection(char* command[]); 
 void handle_mcalc(char* command[], int arg_count);
 int mcalc_format_check(char* command[], int arg_count, struct matrix* matrices[], int* matrix_count,int* operation);
-void* add_matrices(void* matrices);
-void* sub_matrices(void* matrices);
+void* matrices_calculation(void* arg);
+void free_matrices(struct matrix* matrices[], int matrix_count);
+
+struct thread_data
+{
+    struct matrix* matrices[2];
+    int operation;
+};
 
 struct bg_process 
 {
@@ -1198,7 +1204,7 @@ int mcalc_format_check(char* command[], int arg_count, struct matrix* matrices[]
         *operation = 2;
     }
 
-     // Variables to track dimensions of the first matrix for comparison
+    // Variables to track dimensions of the first matrix for comparison
     int first_rows = 0;
     int first_cols = 0;
 
@@ -1214,6 +1220,7 @@ int mcalc_format_check(char* command[], int arg_count, struct matrix* matrices[]
         if (arg_len < 7 || arg[0] != '"' || arg[1] != '(' || 
             arg[arg_len-2] != ')' || arg[arg_len-1] != '"')
         {
+            free_matrices(matrices, *matrix_count);
             return 1;
         }
 
@@ -1226,6 +1233,7 @@ int mcalc_format_check(char* command[], int arg_count, struct matrix* matrices[]
         char* colon = strchr(arg_copy, ':');
         if (!colon) 
         {
+            free_matrices(matrices, *matrix_count);
             return 1;
         }
         
@@ -1235,6 +1243,7 @@ int mcalc_format_check(char* command[], int arg_count, struct matrix* matrices[]
         char* dims = arg_copy;
         char* comma = strchr(dims, ',');
         if (!comma) {
+            free_matrices(matrices, *matrix_count);
             return 1;
         }
         
@@ -1243,6 +1252,7 @@ int mcalc_format_check(char* command[], int arg_count, struct matrix* matrices[]
         int rows = atoi(dims);
         int cols = atoi(comma + 1);
         if (rows <= 0 || cols <= 0) {
+            free_matrices(matrices, *matrix_count);
             return 1;
         }
 
@@ -1253,15 +1263,23 @@ int mcalc_format_check(char* command[], int arg_count, struct matrix* matrices[]
         }
         // Check that current matrix has same dimensions as first matrix
         else if (rows != first_rows || cols != first_cols) {
+            free_matrices(matrices, *matrix_count);
             return 1;  // Matrix dimensions don't match
         }
         
         // Restore the colon 
         *colon = ':';
 
+        if (*matrix_count >= MAX_MATRICES) 
+        {
+            free_matrices(matrices, *matrix_count);
+            return 1; 
+        }
+
         // Allocate memory for the new matrix
         matrices[*matrix_count] = (struct matrix*)malloc(sizeof(struct matrix));
         if (matrices[*matrix_count] == NULL) {
+            free_matrices(matrices, *matrix_count);
             return 1;  // Memory allocation failed
         }
         
@@ -1272,6 +1290,7 @@ int mcalc_format_check(char* command[], int arg_count, struct matrix* matrices[]
         
         if (matrices[*matrix_count]->data == NULL) {
             free(matrices[*matrix_count]);
+            free_matrices(matrices, *matrix_count);
             return 1;  // Memory allocation failed
         }
         
@@ -1296,28 +1315,70 @@ int mcalc_format_check(char* command[], int arg_count, struct matrix* matrices[]
 
         // insert data into matrix
         int data_index = 0;
-        char *data_str = colon + 1;        // points to the first digit after ":"
-        char *token = strtok(data_str, ",)"); 
+        char *data_copy = strdup(colon + 1);  // Create a copy of the data string
+        if (data_copy == NULL) {
+            free(matrices[*matrix_count]->data);
+            free(matrices[*matrix_count]);
+            free_matrices(matrices, *matrix_count);
+            return 1;  // Memory allocation failed
+        }
+        char *token = strtok(data_copy, ",)"); 
         while (token != NULL) {
             if (data_index < rows * cols) {
                 matrices[*matrix_count]->data[data_index++] = atoi(token);
             }
             token = strtok(NULL, ",)");
         }
+        free(data_copy);  // Free the copy 
         
         // Verify element count matches dimensions
         if (count != rows * cols)
         {
             free(matrices[*matrix_count]->data);
             free(matrices[*matrix_count]);
+            free_matrices(matrices, *matrix_count);
             return 1;
         }
 
         (*matrix_count)++;
     }
 
-    
     return 0;
+}
+
+void free_matrices(struct matrix* matrices[], int matrix_count) 
+{
+    for (int i = 0; i < matrix_count; i++) 
+    {
+        if (matrices[i] != NULL) {
+            free(matrices[i]->data);
+            free(matrices[i]);
+            matrices[i] = NULL;
+        }
+    }
+}
+
+void* matrices_calculation(void* arg)
+{
+    struct thread_data* td = (struct thread_data*)arg;
+
+    for (int i = 0; i < td->matrices[0]->size; i++)
+    {
+        if (td->operation == 1)
+        {
+            td->matrices[0]->data[i] = td->matrices[0]->data[i] + td->matrices[1]->data[i];
+        }
+        else
+        {
+            td->matrices[0]->data[i] = td->matrices[0]->data[i] - td->matrices[1]->data[i];
+        }
+    }
+
+    //free 
+    free(td->matrices[1]);
+    free(td);
+    
+    return NULL;
 }
 
 void handle_mcalc(char* command[], int arg_count)
@@ -1326,6 +1387,12 @@ void handle_mcalc(char* command[], int arg_count)
     int matrix_count = 0;
     int operation = 0;  // 1 for ADD, 2 for SUB
     struct matrix* matrices[MAX_MATRICES];
+
+    //initialize matrices to NULL
+    for (int i = 0; i < MAX_MATRICES; i++)
+    {
+        matrices[i] = NULL;
+    }
     
     int error = mcalc_format_check(command, arg_count, matrices, &matrix_count, &operation);
     if (error)
@@ -1334,44 +1401,58 @@ void handle_mcalc(char* command[], int arg_count)
         return;
     }
 
-    for (int i = 0; i < matrix_count; i++)
-     {
+    while (matrix_count > 1)
+    {
+        int size = matrix_count/2;
+        pthread_t threads[size];
 
-         printf("Matrix %d:\n", i + 1);
-         printf("Rows: %d, Columns: %d\n", matrices[i]->rows, matrices[i]->cols);
-         printf("Data: ");
-         for (int j = 0; j < matrices[i]->size; j++) {
-             printf("%d ", matrices[i]->data[j]);
-         }
-         printf("\n");
-     }
+        for (int i = 0; i < size; i++)
+        {
+            //initialize thread data
+            struct thread_data* td = malloc(sizeof(*td));
+            if (td == NULL)
+            {
+                perror("malloc");
+                return;
+            }
+            
+            td->operation = operation;
+            td->matrices[0] = matrices[2*i];
+            td->matrices[1] = matrices[2*i+1];
 
-    // while (matrix_count > 1)
-    // {
-    //     int size = matrix_count / 2;
-    //     pthread_t threads[size];
+            //create thread
+            pthread_create(&threads[i],NULL,matrices_calculation,(void*)td);
 
-    //     for (int i = 0; i < size; i++)
-    //     {
-    //         if (operation == 1)
-    //         {
-    //             pthread_create(&threads[i],NULL,add_matrices,(void*)matrices);
-    //         }
-    //         else
-    //         {
-    //             pthread_create(&threads[i],NULL,sub_matrices,(void*)matrices);
-    //         }
-    //     }
-    // }
+            //save result matrix
+            matrices[i] = td->matrices[0];
+            
+            if (matrix_count % 2 == 1) // if odd number of matrices, save last matrix
+            {
+                matrices[size] = matrices[matrix_count - 1];
+            }
+        }
 
+        for (int i = 0; i < size; i++)
+        {
+            pthread_join(threads[i],NULL);
+        }
+
+        matrix_count = size + (matrix_count % 2); //update count
+    }
+
+    printf("Output: (%d,%d:", matrices[0]->rows, matrices[0]->cols);
+    for (int i = 0; i < matrices[0]->size; i++) {
+        printf("%d", matrices[0]->data[i]);
+        if (i < matrices[0]->size - 1) // if not last element
+        {
+            printf(",");
+        }
+    }
+    printf(")\n");
+
+    //free matrices
+    free_matrices(matrices, matrix_count);
 }
 
-// void* add_matrices(void* matrices)
-// {
-    
-// }
 
-// void* sub_matrices(void* matrices)
-// {
-        
-// }
+

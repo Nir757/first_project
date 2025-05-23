@@ -1429,10 +1429,11 @@ void handle_mcalc(char* command[], int arg_count)
             //save result matrix
             matrices[i] = td->matrices[0];
             
-            if (matrix_count % 2 == 1) // if odd number of matrices, save last matrix
-            {
-                matrices[size] = matrices[matrix_count - 1];
-            }
+        }
+
+        if (matrix_count % 2 == 1) // if odd number of matrices, save last matrix
+        {
+            matrices[size] = matrices[matrix_count - 1];
         }
 
         for (int i = 0; i < size; i++)

@@ -1,27 +1,22 @@
-# Build directories
+# Test files
+test_*
+*_test
+*_tests
+tests/
+test/
+
+# Build files
 build/
-bin/
-lib/
+cmake-build-*/
 
 # Object files
 *.o
 *.obj
 
-# Executables
+# Executable files
 *.exe
 *.out
 *.app
-ex1
-ex2
-debug
-main
-shell
-
-# CMake generated files
-CMakeFiles/
-CMakeCache.txt
-cmake_install.cmake
-Makefile
 
 # IDE specific files
 .vscode/
@@ -42,4 +37,9 @@ Thumbs.db
 *.txt
 !CMakeLists.txt
 !README.md
+
+# Keep only specific files
+!ex2.c
+!dangerous_commands.txt
+!exec_times.txt
 

@@ -205,3 +205,11 @@ ps aux : 0.00322 sec
 pwd : 0.00109 sec
 ls : 0.00077 sec
 echo : 0.00113 sec
+mcalc : 0.00017 sec
+mcalc : 0.00021 sec
+mcalc : 0.00017 sec
+mcalc : 0.00024 sec
+mcalc : 0.00014 sec
+mcalc : 0.00037 sec
+mcalc : 0.00038 sec
+mcalc : 0.00030 sec

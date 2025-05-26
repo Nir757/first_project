@@ -23,7 +23,7 @@
 
 #define MAX_BG_PROCESSES 100
 
-#define MAX_MATRICES 5 // max arg is 7 so 5 matrices
+#define MAX_MATRICES 20 
 
 struct matrix
 {
@@ -34,7 +34,7 @@ struct matrix
 };
 
 int space_error(char str[]);
-void split_string(char* input, char* result[], int* count, int rlimit_flag);
+void split_string(char* input, char* result[], int* count, int max_arg);
 void input_arg_check(int argc);
 FILE* open_file(char* filename, char* mode);
 int load_dangerous_commands(FILE* dangerous_commands, char* dng_cmds[]);
@@ -333,10 +333,13 @@ int split_and_validate(char* input, char* original_input, char* command[], int r
 {
     int arg_count = 0;
     int error = 0;  // Track if we have any errors
-    int max_arg = MAX_ARG;
-
-    if (rlimit_flag == 1)
-        max_arg = MAX_ARG + 6; // 6 for rlimit commands + 7 for the new command
+    int max_arg;
+    
+    if (strncmp(input, "mcalc", 5) == 0) {
+        max_arg = 20; // limit for mcalc
+    } else {
+        max_arg = rlimit_flag ? MAX_ARG + 6 : MAX_ARG;
+    }
 
     int space_err = space_error(input);
     if (space_err == 1) //check for one or more spaces
@@ -345,7 +348,7 @@ int split_and_validate(char* input, char* original_input, char* command[], int r
         error = 1;
     }
 
-    split_string(input, command, &arg_count, rlimit_flag);
+    split_string(input, command, &arg_count, max_arg);
 
     // Check if split_string encountered too many arguments
     if (arg_count == -1 || arg_count > max_arg) 
@@ -513,11 +516,10 @@ int space_error(char str[])
     return 0;
 }
 
-void split_string(char* input, char* result[], int* count, int rlimit_flag) {
+void split_string(char* input, char* result[], int* count, int max_arg) {
     *count = 0;
     int word_start = 0;
     int input_length = strlen(input);
-    int max_arg = rlimit_flag ? MAX_ARG + 6 : MAX_ARG;
     
     // Initialize all pointers to NULL
     for (int i = 0; i <= max_arg; i++) {
@@ -556,8 +558,8 @@ void split_string(char* input, char* result[], int* count, int rlimit_flag) {
         }
     }
     
-    // Check if we exceeded MAX_ARG
-    if (*count >= MAX_ARG && word_start < input_length) {
+    // Check if we exceeded max_arg
+    if (*count >= max_arg && word_start < input_length) {
         // Clean up if we hit the limit
         for (int i = 0; i < *count; i++) {
             free(result[i]);
